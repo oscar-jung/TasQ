@@ -1,0 +1,98 @@
+# Tasq Backend Endpoints (Quick Reference)
+
+This is a concise map of HTTP endpoints to handler functions under `internal/server`.
+
+## Health
+- `GET /healthz`
+  - Handler: `(*server).healthz` in `internal/server/main.go`
+  - Purpose: liveness check.
+
+## Projects
+- `GET /projects`
+  - Handler: `(*server).listProjects` in `internal/server/projects.go`
+  - Purpose: list all projects.
+
+- `POST /projects`
+  - Handler: `(*server).createProject` in `internal/server/projects.go`
+  - Purpose: create a new project.
+
+- `PATCH /projects/:project_id`
+  - Handler: `(*server).updateProject` in `internal/server/projects.go`
+  - Purpose: rename/update project metadata.
+
+## Project Task Views
+- `GET /projects/:project_id/tasks`
+  - Handler: `(*server).listProjectTasks` in `internal/server/projects.go`
+  - Purpose: list project tasks as a flat list.
+
+- `GET /projects/:project_id/tasks/tree`
+  - Handler: `(*server).getProjectTaskTree` in `internal/server/projects.go`
+  - Purpose: return hierarchical task tree.
+
+- `POST /projects/:project_id/tasks`
+  - Handler: `(*server).createTask` in `internal/server/tasks.go`
+  - Purpose: create a root/child task.
+
+- `POST /projects/:project_id/tasks/validate`
+  - Handler: `(*server).validateProjectTree` in `internal/server/tree_guard.go`
+  - Purpose: validate tree integrity and optionally cleanse invalid statuses.
+
+## Task Dependencies
+- `POST /tasks/:task_id/dependencies`
+  - Handler: `(*server).addDependency` in `internal/server/tasks.go`
+  - Purpose: add predecessor dependency (DAG-safe).
+
+- `GET /tasks/:task_id/dependencies`
+  - Handler: `(*server).listDependencies` in `internal/server/tasks.go`
+  - Purpose: list predecessor/successor edges for a task.
+
+- `DELETE /tasks/:task_id/dependencies/:predecessor_id`
+  - Handler: `(*server).removeDependency` in `internal/server/tasks.go`
+  - Purpose: remove a dependency edge.
+
+## Task Content/Lifecycle
+- `PATCH /tasks/:task_id/status`
+  - Handler: `(*server).updateTaskStatus` in `internal/server/tasks.go`
+  - Purpose: update status with dependency checks.
+
+- `PATCH /tasks/:task_id/content`
+  - Handler: `(*server).updateTaskContent` in `internal/server/tasks.go`
+  - Purpose: update title/spec/result fields.
+
+- `POST /tasks/:task_id/delete`
+  - Handler: `(*server).deleteTask` in `internal/server/tasks.go`
+  - Purpose: delete task by strategy (`delete_subtree`, `promote_children`, `delete_if_leaf`).
+
+- `POST /tasks/reorder`
+  - Handler: `(*server).reorderTasks` in `internal/server/tasks.go`
+  - Purpose: reorder sibling tasks.
+
+- `POST /tasks/:task_id/move`
+  - Handler: `(*server).moveTask` in `internal/server/tasks.go`
+  - Purpose: move task under a new parent/index.
+
+- `GET /tasks/:task_id/context`
+  - Handler: `(*server).getTaskContext` in `internal/server/agents.go`
+  - Purpose: get task + dependencies + parent chain context.
+
+## Agent Queue/Claims
+- `POST /agents/claim-next`
+  - Handler: `(*server).claimNext` in `internal/server/agents.go`
+  - Purpose: atomically claim the next executable task.
+
+- `POST /tasks/:task_id/heartbeat`
+  - Handler: `(*server).heartbeatTaskClaim` in `internal/server/agents.go`
+  - Purpose: extend claim lease.
+
+- `POST /tasks/:task_id/release`
+  - Handler: `(*server).releaseTaskClaim` in `internal/server/agents.go`
+  - Purpose: release active claim and optionally reset status.
+
+- `POST /tasks/:task_id/complete`
+  - Handler: `(*server).completeTask` in `internal/server/agents.go`
+  - Purpose: complete claimed task and finalize result.
+
+## Notes
+- Tree guard mode is controlled by env `TREE_GUARD_MODE`:
+  - `off` (default), `validate`, `cleanse`.
+- Topology writes use project advisory lock via `lockProjectTopology`.
