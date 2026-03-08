@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: tasq-db
+    environment:
+      POSTGRES_USER: tasq
+      POSTGRES_PASSWORD: tasq
+      POSTGRES_DB: tasq
+    ports:
+      - "5432:5432"
+    volumes:
+      - tasq-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tasq -d tasq"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    image: postgres:16-alpine
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./tasq-backend/migrations:/migrations:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "for f in /migrations/*.sql; do psql postgresql://tasq:tasq@db:5432/tasq -f \"$$f\"; done"
+
+  api:
+    build:
+      context: ./tasq-backend
+    container_name: tasq-api
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://tasq:tasq@db:5432/tasq?sslmode=disable
+      PORT: 8080
+    ports:
+      - "8080:8080"
+
+  web:
+    build:
+      context: ./tasq-app
+    container_name: tasq-web
+    depends_on:
+      - api
+    environment:
+      VITE_API_BASE: http://localhost:8080
+    ports:
+      - "5173:5173"
+
+volumes:
+  tasq-db-data:

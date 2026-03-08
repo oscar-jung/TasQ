@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 120 16% 96%;
+  --foreground: 148 23% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 148 23% 12%;
+  --primary: 151 60% 32%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 145 34% 92%;
+  --secondary-foreground: 148 23% 12%;
+  --muted: 142 20% 92%;
+  --muted-foreground: 145 14% 36%;
+  --accent: 145 39% 90%;
+  --accent-foreground: 148 23% 12%;
+  --destructive: 0 72% 52%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 142 16% 82%;
+  --input: 142 16% 82%;
+  --ring: 151 60% 32%;
+  --radius: 0.65rem;
+}
+
+* {
+  @apply border-border;
+}
+
+body {
+  @apply bg-background text-foreground;
+  margin: 0;
+  font-family: 'IBM Plex Sans', 'Noto Sans KR', sans-serif;
+  background-image: radial-gradient(circle at 1px 1px, rgba(18, 68, 44, 0.12) 1px, transparent 0);
+  background-size: 18px 18px;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3 {
+  @apply mt-4 font-semibold;
+}
+
+.markdown-preview p {
+  @apply my-2 text-sm leading-relaxed;
+}
+
+.markdown-preview ul {
+  @apply ml-4 list-disc text-sm;
+}
