@@ -50,3 +50,68 @@ body {
 .tree-scroll::-webkit-scrollbar-track {
   background: hsl(var(--muted));
 }
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3 {
+  margin: 0 0 0.5rem;
+  font-weight: 700;
+}
+
+.markdown-preview h1 {
+  font-size: 1.1rem;
+}
+
+.markdown-preview h2 {
+  font-size: 1rem;
+}
+
+.markdown-preview h3 {
+  font-size: 0.92rem;
+}
+
+.markdown-preview p {
+  margin: 0 0 0.6rem;
+  line-height: 1.5;
+}
+
+.markdown-preview ul {
+  margin: 0 0 0.6rem;
+  padding-left: 1.1rem;
+}
+
+.markdown-preview li {
+  margin-bottom: 0.25rem;
+}
+
+.markdown-preview code {
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted));
+  border-radius: 6px;
+  padding: 1px 5px;
+  font-size: 0.85em;
+}
+
+.markdown-preview pre {
+  margin: 0 0 0.7rem;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted));
+  border-radius: 8px;
+  padding: 0.7rem;
+  overflow: auto;
+}
+
+.markdown-preview pre code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.markdown-preview a {
+  color: hsl(var(--foreground));
+  text-decoration: underline;
+}
+
+.markdown-preview .muted {
+  color: hsl(var(--muted-foreground));
+}

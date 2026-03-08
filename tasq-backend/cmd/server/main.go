@@ -18,7 +18,8 @@ import (
 )
 
 type server struct {
-	db *sql.DB
+	db            *sql.DB
+	treeGuardMode string
 }
 
 type project struct {
@@ -133,6 +134,21 @@ type taskContext struct {
 	ParentChain  []task              `json:"parent_chain"`
 }
 
+type validateTreeReq struct {
+	Cleanse bool `json:"cleanse"`
+}
+
+type treeValidationReport struct {
+	ProjectID              int64   `json:"project_id"`
+	CheckedTasks           int     `json:"checked_tasks"`
+	MissingParentTaskIDs   []int64 `json:"missing_parent_task_ids"`
+	CycleTaskIDs           []int64 `json:"cycle_task_ids"`
+	StatusViolationTaskIDs []int64 `json:"status_violation_task_ids"`
+	CleansedTaskIDs        []int64 `json:"cleansed_task_ids"`
+	Valid                  bool    `json:"valid"`
+	Cleansed               bool    `json:"cleansed"`
+}
+
 func main() {
 	dbURL := getenv("DATABASE_URL", "postgres://tasq:tasq@db:5432/tasq?sslmode=disable")
 	port := getenv("PORT", "8080")
@@ -153,7 +169,13 @@ func main() {
 		log.Fatalf("ping db: %v", err)
 	}
 
-	s := &server{db: db}
+	treeGuardMode := strings.ToLower(strings.TrimSpace(getenv("TREE_GUARD_MODE", "off")))
+	if treeGuardMode != "off" && treeGuardMode != "validate" && treeGuardMode != "cleanse" {
+		log.Printf("invalid TREE_GUARD_MODE=%q, fallback to off", treeGuardMode)
+		treeGuardMode = "off"
+	}
+
+	s := &server{db: db, treeGuardMode: treeGuardMode}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.healthz)
 	mux.HandleFunc("/projects", s.projects)
@@ -218,6 +240,10 @@ func (s *server) projectsSubrouter(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(parts) == 3 && parts[2] == "tree" && r.Method == http.MethodGet {
 			s.getProjectTaskTree(w, r, projectID)
+			return
+		}
+		if len(parts) == 3 && parts[2] == "validate" && r.Method == http.MethodPost {
+			s.validateProjectTree(w, r, projectID)
 			return
 		}
 	}
@@ -401,6 +427,187 @@ func (s *server) getProjectTaskTree(w http.ResponseWriter, r *http.Request, proj
 	writeJSON(w, http.StatusOK, buildTaskTree(tasks))
 }
 
+func (s *server) validateProjectTree(w http.ResponseWriter, r *http.Request, projectID int64) {
+	var req validateTreeReq
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	report, err := s.validateAndOptionallyCleanseProjectTree(r.Context(), projectID, req.Cleanse)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *server) maybeRunTreeGuard(ctx context.Context, projectID int64) {
+	if s.treeGuardMode == "off" {
+		return
+	}
+	cleanse := s.treeGuardMode == "cleanse"
+	report, err := s.validateAndOptionallyCleanseProjectTree(ctx, projectID, cleanse)
+	if err != nil {
+		log.Printf("tree guard failed (project=%d mode=%s): %v", projectID, s.treeGuardMode, err)
+		return
+	}
+	if !report.Valid || len(report.CleansedTaskIDs) > 0 {
+		log.Printf(
+			"tree guard report (project=%d mode=%s valid=%t missing=%d cycles=%d status_violations=%d cleansed=%d)",
+			projectID,
+			s.treeGuardMode,
+			report.Valid,
+			len(report.MissingParentTaskIDs),
+			len(report.CycleTaskIDs),
+			len(report.StatusViolationTaskIDs),
+			len(report.CleansedTaskIDs),
+		)
+	}
+}
+
+func (s *server) validateAndOptionallyCleanseProjectTree(ctx context.Context, projectID int64, cleanse bool) (treeValidationReport, error) {
+	report := treeValidationReport{
+		ProjectID:              projectID,
+		MissingParentTaskIDs:   make([]int64, 0),
+		CycleTaskIDs:           make([]int64, 0),
+		StatusViolationTaskIDs: make([]int64, 0),
+		CleansedTaskIDs:        make([]int64, 0),
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return report, err
+	}
+	defer tx.Rollback()
+
+	if err := lockProjectTopology(ctx, tx, projectID); err != nil {
+		return report, err
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, parent_task_id, status
+		FROM tasks
+		WHERE project_id = $1
+		FOR UPDATE`, projectID)
+	if err != nil {
+		return report, err
+	}
+	defer rows.Close()
+
+	type lightweightTask struct {
+		id       int64
+		parentID *int64
+		status   string
+	}
+
+	tasks := make([]lightweightTask, 0)
+	byID := map[int64]lightweightTask{}
+	for rows.Next() {
+		var t lightweightTask
+		if err := rows.Scan(&t.id, &t.parentID, &t.status); err != nil {
+			return report, err
+		}
+		tasks = append(tasks, t)
+		byID[t.id] = t
+	}
+	if err := rows.Err(); err != nil {
+		return report, err
+	}
+	report.CheckedTasks = len(tasks)
+
+	missingSet := map[int64]struct{}{}
+	for _, t := range tasks {
+		if t.parentID != nil {
+			if _, ok := byID[*t.parentID]; !ok {
+				missingSet[t.id] = struct{}{}
+			}
+		}
+	}
+	for id := range missingSet {
+		report.MissingParentTaskIDs = append(report.MissingParentTaskIDs, id)
+	}
+	sort.Slice(report.MissingParentTaskIDs, func(i, j int) bool { return report.MissingParentTaskIDs[i] < report.MissingParentTaskIDs[j] })
+
+	const (
+		white = 0
+		gray  = 1
+		black = 2
+	)
+	visit := map[int64]int{}
+	cycleSet := map[int64]struct{}{}
+	var dfs func(id int64, stack map[int64]struct{})
+	dfs = func(id int64, stack map[int64]struct{}) {
+		visit[id] = gray
+		stack[id] = struct{}{}
+		current := byID[id]
+		if current.parentID != nil {
+			parentID := *current.parentID
+			if _, ok := byID[parentID]; ok {
+				state := visit[parentID]
+				if state == gray {
+					for taskID := range stack {
+						cycleSet[taskID] = struct{}{}
+					}
+					cycleSet[parentID] = struct{}{}
+				} else if state == white {
+					dfs(parentID, stack)
+				}
+			}
+		}
+		delete(stack, id)
+		visit[id] = black
+	}
+	for _, t := range tasks {
+		if visit[t.id] == white {
+			dfs(t.id, map[int64]struct{}{})
+		}
+	}
+	for id := range cycleSet {
+		report.CycleTaskIDs = append(report.CycleTaskIDs, id)
+	}
+	sort.Slice(report.CycleTaskIDs, func(i, j int) bool { return report.CycleTaskIDs[i] < report.CycleTaskIDs[j] })
+
+	violatingSet := map[int64]struct{}{}
+	for _, t := range tasks {
+		if t.parentID == nil {
+			continue
+		}
+		parent, ok := byID[*t.parentID]
+		if !ok {
+			continue
+		}
+		if parent.status != "done" && t.status != "planned" {
+			violatingSet[t.id] = struct{}{}
+		}
+	}
+	for id := range violatingSet {
+		report.StatusViolationTaskIDs = append(report.StatusViolationTaskIDs, id)
+	}
+	sort.Slice(report.StatusViolationTaskIDs, func(i, j int) bool { return report.StatusViolationTaskIDs[i] < report.StatusViolationTaskIDs[j] })
+
+	if cleanse && len(report.StatusViolationTaskIDs) > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE tasks
+			SET status = 'planned',
+			    started_at = NULL,
+			    done_at = NULL,
+			    updated_at = NOW()
+			WHERE project_id = $1
+			  AND id = ANY($2::bigint[])`, projectID, pq.Array(report.StatusViolationTaskIDs)); err != nil {
+			return report, err
+		}
+		report.Cleansed = true
+		report.CleansedTaskIDs = append(report.CleansedTaskIDs, report.StatusViolationTaskIDs...)
+	}
+
+	report.Valid = len(report.MissingParentTaskIDs) == 0 && len(report.CycleTaskIDs) == 0 && len(report.StatusViolationTaskIDs) == 0
+
+	if err := tx.Commit(); err != nil {
+		return report, err
+	}
+	return report, nil
+}
+
 func (s *server) fetchProjectTasks(ctx context.Context, projectID int64) ([]task, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, project_id, parent_task_id, title, spec_md, result_md, status, display_order, created_at, started_at, done_at
@@ -522,6 +729,7 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, projectID in
 		return
 	}
 
+	s.maybeRunTreeGuard(r.Context(), projectID)
 	writeJSON(w, http.StatusCreated, t)
 }
 
@@ -755,6 +963,10 @@ func (s *server) updateTaskStatus(w http.ResponseWriter, r *http.Request, taskID
 		return
 	}
 
+	projectID, pidErr := s.fetchProjectIDByTaskID(r.Context(), taskID)
+	if pidErr == nil {
+		s.maybeRunTreeGuard(r.Context(), projectID)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -793,9 +1005,9 @@ func (s *server) updateTaskContent(w http.ResponseWriter, r *http.Request, taskI
 
 	if _, err := tx.ExecContext(r.Context(), `
 		UPDATE tasks
-		SET title = CASE WHEN $2 IS NULL THEN title ELSE $2 END,
-			spec_md = CASE WHEN $3 IS NULL THEN spec_md ELSE $3 END,
-			result_md = CASE WHEN $4 IS NULL THEN result_md ELSE $4 END,
+		SET title = CASE WHEN $2::text IS NULL THEN title ELSE $2::text END,
+			spec_md = CASE WHEN $3::text IS NULL THEN spec_md ELSE $3::text END,
+			result_md = CASE WHEN $4::text IS NULL THEN result_md ELSE $4::text END,
 			updated_at = NOW()
 		WHERE id = $1`,
 		taskID, req.Title, req.SpecMD, req.ResultMD); err != nil {
@@ -808,6 +1020,7 @@ func (s *server) updateTaskContent(w http.ResponseWriter, r *http.Request, taskI
 		return
 	}
 
+	s.maybeRunTreeGuard(r.Context(), projectID)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -1100,6 +1313,10 @@ func (s *server) heartbeatTaskClaim(w http.ResponseWriter, r *http.Request, task
 		return
 	}
 
+	projectID, pidErr := s.fetchProjectIDByTaskID(r.Context(), taskID)
+	if pidErr == nil {
+		s.maybeRunTreeGuard(r.Context(), projectID)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -1169,6 +1386,10 @@ func (s *server) releaseTaskClaim(w http.ResponseWriter, r *http.Request, taskID
 		return
 	}
 
+	projectID, pidErr := s.fetchProjectIDByTaskID(r.Context(), taskID)
+	if pidErr == nil {
+		s.maybeRunTreeGuard(r.Context(), projectID)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -1241,6 +1462,10 @@ func (s *server) completeTask(w http.ResponseWriter, r *http.Request, taskID int
 		return
 	}
 
+	projectID, pidErr := s.fetchProjectIDByTaskID(r.Context(), taskID)
+	if pidErr == nil {
+		s.maybeRunTreeGuard(r.Context(), projectID)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -1344,6 +1569,7 @@ func (s *server) reorderTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.maybeRunTreeGuard(r.Context(), req.ProjectID)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -1468,6 +1694,7 @@ func (s *server) moveTask(w http.ResponseWriter, r *http.Request, taskID int64) 
 		return
 	}
 
+	s.maybeRunTreeGuard(r.Context(), projectID)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -1487,6 +1714,14 @@ func getActiveClaimID(ctx context.Context, tx *sql.Tx, taskID int64, agentID str
 		return 0, err
 	}
 	return claimID, nil
+}
+
+func (s *server) fetchProjectIDByTaskID(ctx context.Context, taskID int64) (int64, error) {
+	var projectID int64
+	if err := s.db.QueryRowContext(ctx, `SELECT project_id FROM tasks WHERE id = $1`, taskID).Scan(&projectID); err != nil {
+		return 0, err
+	}
+	return projectID, nil
 }
 
 func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID int64) {
