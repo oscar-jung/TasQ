@@ -2,3 +2,5 @@
 node_modules
 /dist
 /bin
+tasq-backend/.gocache/
+tasq-backend/.gopath/
