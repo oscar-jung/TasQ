@@ -61,6 +61,7 @@ docker compose up --build
 ./scripts/topology_move_reorder_smoke.sh
 ./scripts/lease_reclaim_smoke.sh
 ./scripts/capability_claim_smoke.sh
+./scripts/final_regression_suite.sh
 ```
 
 ## Agent runtime demo
@@ -72,10 +73,11 @@ PROJECT_ID=1 ACTION=release ./scripts/agent_worker_demo.sh
 
 - Agent API contract: `tasq-backend/docs/agent_contract.md`
 - Operations guide: `tasq-backend/docs/operations.md`
+- Release checklist: `tasq-backend/docs/release_checklist.md`
 
 ## Next implementation targets
-- Agent capability-based claim filters
 - Dependency graph visualization
+- Dashboard-level runtime alert summaries
 
 ## Auth (backend)
 - `AUTH_MODE`: `off` (default), `optional`, `required`
