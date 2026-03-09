@@ -94,6 +94,15 @@ type RuntimeAlertsResponse = {
   orphan_in_progress_tasks: OrphanTaskAlert[]
 }
 
+type ProjectAlertBadge = {
+  stale: number
+  overdue: number
+  orphan: number
+  score: number
+  loading: boolean
+  error: boolean
+}
+
 type TaskCapabilitiesResponse = {
   task_id: number
   required_capabilities: string[]
@@ -125,6 +134,7 @@ type TreeValidationReport = {
 const apiBase = import.meta.env.VITE_API_BASE ?? 'http://localhost:8080'
 export function App() {
   const [projects, setProjects] = useState<Project[]>([])
+  const [projectAlertBadges, setProjectAlertBadges] = useState<Record<number, ProjectAlertBadge>>({})
   const [selectedProjectID, setSelectedProjectID] = useState<number | null>(null)
   const [newProjectName, setNewProjectName] = useState('')
 
@@ -506,6 +516,69 @@ export function App() {
   }, [selectedProjectID])
 
   useEffect(() => {
+    if (projects.length === 0) {
+      setProjectAlertBadges({})
+      return
+    }
+    let cancelled = false
+    const run = async () => {
+      const ids = projects.map((p) => p.id)
+      setProjectAlertBadges((prev) => {
+        const next: Record<number, ProjectAlertBadge> = {}
+        ids.forEach((id) => {
+          next[id] = prev[id] ?? { stale: 0, overdue: 0, orphan: 0, score: 0, loading: true, error: false }
+          next[id] = { ...next[id], loading: true, error: false }
+        })
+        return next
+      })
+
+      const settled = await Promise.all(
+        projects.map(async (project) => {
+          try {
+            const data = await fetchRuntimeAlerts(project.id, 300)
+            return {
+              id: project.id,
+              badge: {
+                stale: data.stale_active_claims.length,
+                overdue: data.heartbeat_overdue_claims.length,
+                orphan: data.orphan_in_progress_tasks.length,
+                score:
+                  data.stale_active_claims.length +
+                  data.heartbeat_overdue_claims.length +
+                  data.orphan_in_progress_tasks.length,
+                loading: false,
+                error: false
+              }
+            }
+          } catch {
+            return {
+              id: project.id,
+              badge: { stale: 0, overdue: 0, orphan: 0, score: 0, loading: false, error: true }
+            }
+          }
+        })
+      )
+
+      if (cancelled) return
+      setProjectAlertBadges((prev) => {
+        const next = { ...prev }
+        settled.forEach((item) => {
+          next[item.id] = item.badge
+        })
+        return next
+      })
+    }
+    void run()
+    const timer = window.setInterval(() => {
+      void run()
+    }, 30000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [projects])
+
+  useEffect(() => {
     if (!selectedProjectID) return
     let cancelled = false
     const run = async () => {
@@ -519,11 +592,29 @@ export function App() {
         )
         if (cancelled) return
         setRuntimeAlerts(data)
+        setProjectAlertBadges((prev) => ({
+          ...prev,
+          [selectedProjectID]: {
+            stale: data.stale_active_claims.length,
+            overdue: data.heartbeat_overdue_claims.length,
+            orphan: data.orphan_in_progress_tasks.length,
+            score:
+              data.stale_active_claims.length +
+              data.heartbeat_overdue_claims.length +
+              data.orphan_in_progress_tasks.length,
+            loading: false,
+            error: false
+          }
+        }))
       } catch (err) {
         if (cancelled) return
         const message = err instanceof Error ? err.message : 'failed to load runtime alerts'
         setRuntimeAlertsError(message)
         setRuntimeAlerts(null)
+        setProjectAlertBadges((prev) => ({
+          ...prev,
+          [selectedProjectID]: { stale: 0, overdue: 0, orphan: 0, score: 0, loading: false, error: true }
+        }))
       } finally {
         if (!cancelled) {
           setIsLoadingRuntimeAlerts(false)
@@ -713,6 +804,18 @@ export function App() {
         Number.isInteger(threshold) && threshold > 0 ? threshold : undefined
       )
       setRuntimeAlerts(data)
+      setProjectAlertBadges((prev) => ({
+        ...prev,
+        [selectedProjectID]: {
+          stale: data.stale_active_claims.length,
+          overdue: data.heartbeat_overdue_claims.length,
+          orphan: data.orphan_in_progress_tasks.length,
+          score:
+            data.stale_active_claims.length + data.heartbeat_overdue_claims.length + data.orphan_in_progress_tasks.length,
+          loading: false,
+          error: false
+        }
+      }))
     } catch (err) {
       const message = err instanceof Error ? err.message : 'failed to refresh runtime alerts'
       setRuntimeAlertsError(message)
@@ -917,6 +1020,20 @@ export function App() {
         Number.isInteger(threshold) && threshold > 0 ? threshold : undefined
       )
       setRuntimeAlerts(runtime)
+      setProjectAlertBadges((prev) => ({
+        ...prev,
+        [projectID]: {
+          stale: runtime.stale_active_claims.length,
+          overdue: runtime.heartbeat_overdue_claims.length,
+          orphan: runtime.orphan_in_progress_tasks.length,
+          score:
+            runtime.stale_active_claims.length +
+            runtime.heartbeat_overdue_claims.length +
+            runtime.orphan_in_progress_tasks.length,
+          loading: false,
+          error: false
+        }
+      }))
     }
   }
 
@@ -1519,6 +1636,7 @@ export function App() {
               {projects.map((project) => {
                 const isSelected = selectedProjectID === project.id
                 const isEditing = editingProjectID === project.id
+                const badge = projectAlertBadges[project.id]
                 return (
                   <div
                     key={project.id}
@@ -1533,7 +1651,16 @@ export function App() {
                     }}
                   >
                     {!isEditing && (
-                      <p className="min-w-0 flex-1 truncate text-left text-sm">{project.name}</p>
+                      <div className="flex min-w-0 flex-1 items-center gap-2">
+                        <p className="min-w-0 flex-1 truncate text-left text-sm">{project.name}</p>
+                        {badge?.loading && <span className="h-2 w-2 rounded-full bg-slate-400" />}
+                        {!badge?.loading && badge?.error && <span className="h-2 w-2 rounded-full bg-rose-400" />}
+                        {!badge?.loading && !badge?.error && badge && badge.score > 0 && (
+                          <span className="rounded-full border border-rose-400/50 bg-rose-400/20 px-2 py-0.5 text-[10px] font-semibold text-rose-200">
+                            {badge.score}
+                          </span>
+                        )}
+                      </div>
                     )}
 
                     {isEditing && (
