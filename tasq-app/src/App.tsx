@@ -354,7 +354,14 @@ export function App() {
       const message = await res.text()
       throw new Error(message || 'failed to fetch task context')
     }
-    return (await res.json()) as TaskContextResponse
+    const raw = (await res.json()) as {
+      recent_runs?: TaskRunSummary[] | null
+      git_refs?: TaskGitRefSummary[] | null
+    }
+    return {
+      recent_runs: Array.isArray(raw.recent_runs) ? raw.recent_runs : [],
+      git_refs: Array.isArray(raw.git_refs) ? raw.git_refs : []
+    }
   }
 
   function hasValidationIssues(report: TreeValidationReport) {
