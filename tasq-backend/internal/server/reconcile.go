@@ -89,7 +89,8 @@ func (s *server) reconcileStaleClaimsTx(ctx context.Context, tx *sql.Tx, project
 		report.ReleasedClaimIDs = append(report.ReleasedClaimIDs, row.ClaimID)
 
 		runPayload, _ := json.Marshal(map[string]any{
-			"reason": "lease_expired_reconcile",
+			"reason":      "lease_expired_reconcile",
+			"resume_hint": "The previous worker stopped heartbeating. Re-read task context and verify on-disk progress before continuing.",
 		})
 		runRes, err := tx.ExecContext(ctx, `
 			WITH target AS (

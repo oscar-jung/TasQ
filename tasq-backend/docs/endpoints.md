@@ -68,6 +68,7 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
     - `task.reconciled.stale_claim`
   - Current `project-signal` payload types:
     - `task.deleted`
+    - `task.invalidated`
     - `project.deleted`
 
 - `POST /projects/:project_id/claims/reconcile`
@@ -116,6 +117,13 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
   - Handler: `(*server).deleteTask` in `internal/server/tasks.go`
   - Purpose: delete task by strategy (`delete_subtree`, `promote_children`, `delete_if_leaf`).
 
+- `POST /tasks/:task_id/invalidate`
+  - Handler: `(*server).invalidateTask` in `internal/server/tasks.go`
+  - Purpose: explicitly reset a task scope back to `planned` for rerun.
+  - Request body:
+    - `scope`: `subtree`, `downstream`, or `both`
+    - `clear_result_md`: boolean
+
 - `POST /tasks/reorder`
   - Handler: `(*server).reorderTasks` in `internal/server/tasks.go`
   - Purpose: reorder sibling tasks.
@@ -127,6 +135,10 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
 - `GET /tasks/:task_id/context`
   - Handler: `(*server).getTaskContext` in `internal/server/agents.go`
   - Purpose: get task + dependencies + parent chain context.
+  - Includes:
+    - `recent_runs`
+    - `interrupted_runs` (recent released runs with resume hints)
+    - `git_refs`
 
 - `GET /tasks/:task_id/events?limit=50`
   - Handler: `(*server).listTaskEvents` in `internal/server/events.go`
@@ -156,6 +168,12 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
     `summary`, `changes`, `paths`, `commands`, `tests`, `artifacts`, `next_risks`.
     - `v2` (default): `summary` is string, others are arrays of non-empty strings.
     - `v1` (legacy): all fields are non-empty strings.
+  - Required body field: `result_md`
+    - must include handoff sections:
+      - `## Summary`
+      - `## Changes`
+      - `## Verification`
+      - `## Risks`
 
 - `POST /tasks/:task_id/fail`
   - Handler: `(*server).failTask` in `internal/server/agents.go`
@@ -165,6 +183,8 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
     `summary`, `changes`, `paths`, `commands`, `tests`, `artifacts`, `next_risks`.
     - `v2` (default): `summary` is string, others are arrays of non-empty strings.
     - `v1` (legacy): all fields are non-empty strings.
+  - Required body field: `result_md`
+    - same handoff template requirement as `complete`
 
 - `POST /tasks/:task_id/git-link`
   - Handler: `(*server).linkTaskGitRef` in `internal/server/tasks.go`

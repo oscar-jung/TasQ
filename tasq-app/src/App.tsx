@@ -46,8 +46,19 @@ type TaskGitRefSummary = {
   created_at: string
 }
 
+type InterruptedRunSummary = {
+  id: number
+  agent_id: string
+  attempt_no: number
+  finished_at: string | null
+  reason: string
+  resume_hint: string
+  to_status: string
+}
+
 type TaskContextResponse = {
   recent_runs: TaskRunSummary[]
+  interrupted_runs: InterruptedRunSummary[]
   git_refs: TaskGitRefSummary[]
 }
 
@@ -975,10 +986,12 @@ export function App() {
     }
     const raw = (await res.json()) as {
       recent_runs?: TaskRunSummary[] | null
+      interrupted_runs?: InterruptedRunSummary[] | null
       git_refs?: TaskGitRefSummary[] | null
     }
     return {
       recent_runs: Array.isArray(raw.recent_runs) ? raw.recent_runs : [],
+      interrupted_runs: Array.isArray(raw.interrupted_runs) ? raw.interrupted_runs : [],
       git_refs: Array.isArray(raw.git_refs) ? raw.git_refs : []
     }
   }
@@ -2580,6 +2593,31 @@ export function App() {
                                     #{run.attempt_no} {run.agent_id}
                                   </span>
                                   <span className="uppercase text-foreground/85">{run.status}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Interrupted Runs</p>
+                          {taskContext.interrupted_runs.length === 0 && (
+                            <p className="mt-1 text-xs text-muted-foreground">No interrupted runs recorded.</p>
+                          )}
+                          {taskContext.interrupted_runs.length > 0 && (
+                            <div className="mt-1 max-h-32 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
+                              {taskContext.interrupted_runs.map((run) => (
+                                <div key={run.id} className="rounded border border-border/60 bg-background/50 p-2 text-xs">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="truncate text-foreground/90">
+                                      #{run.attempt_no} {run.agent_id}
+                                    </span>
+                                    <span className="uppercase text-amber-200">{run.reason.replaceAll('_', ' ')}</span>
+                                  </div>
+                                  {run.resume_hint && <p className="mt-1 text-muted-foreground">{run.resume_hint}</p>}
+                                  {run.to_status && (
+                                    <p className="mt-1 text-[11px] text-muted-foreground">Released to: {run.to_status}</p>
+                                  )}
                                 </div>
                               ))}
                             </div>

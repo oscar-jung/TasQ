@@ -302,7 +302,9 @@ func (s *server) releaseTaskClaim(w http.ResponseWriter, r *http.Request, taskID
 	}
 
 	if err := finishLatestTaskRun(r.Context(), tx, taskID, req.AgentID, claim.AttemptNo, "released", map[string]any{
-		"to_status": req.ToStatus,
+		"to_status":   req.ToStatus,
+		"reason":      "manual_release",
+		"resume_hint": "Resume by claiming the task again and checking the latest task context before editing.",
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -790,6 +792,33 @@ func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID i
 			return
 		}
 		ctxOut.RecentRuns = append(ctxOut.RecentRuns, run)
+	}
+
+	interruptedRows, err := s.db.QueryContext(r.Context(), `
+		SELECT id,
+			agent_id,
+			attempt_no,
+			finished_at,
+			COALESCE(result_payload_json->>'reason', 'released'),
+			COALESCE(result_payload_json->>'resume_hint', ''),
+			COALESCE(result_payload_json->>'to_status', '')
+		FROM task_runs
+		WHERE task_id = $1
+		  AND status = 'released'
+		ORDER BY finished_at DESC NULLS LAST, started_at DESC
+		LIMIT 5`, taskID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer interruptedRows.Close()
+	for interruptedRows.Next() {
+		var run interruptedRunSummary
+		if err := interruptedRows.Scan(&run.ID, &run.AgentID, &run.AttemptNo, &run.FinishedAt, &run.Reason, &run.ResumeHint, &run.ToStatus); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		ctxOut.InterruptedRuns = append(ctxOut.InterruptedRuns, run)
 	}
 
 	gitRows, err := s.db.QueryContext(r.Context(), `

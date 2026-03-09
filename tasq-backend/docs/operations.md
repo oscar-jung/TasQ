@@ -64,7 +64,15 @@ cat tasq_backup.sql | docker compose exec -T db psql -U tasq -d tasq
    - the queue will not assign those tasks again
    - treat this as human-action-required, not an auto-retry case
    - fix the task definition, underlying implementation issue, or raise `max_attempts`
-8. If UI does not reflect status/content changes immediately:
+8. If a task repeatedly returns to `planned` after running:
+   - inspect `GET /tasks/:id/context`
+   - check `interrupted_runs` for `reason` and `resume_hint`
+   - common reasons:
+     - `manual_release`
+     - `lease_expired_reconcile`
+     - `manual_invalidate`
+   - reclaim only after reviewing the existing on-disk progress and latest task result/spec
+9. If UI does not reflect status/content changes immediately:
    - verify the corresponding `task-event` type is emitted:
      - `task.created`
      - `task.content.updated`
@@ -75,12 +83,24 @@ cat tasq_backup.sql | docker compose exec -T db psql -U tasq -d tasq
      - `task.reordered`
      - `task.moved`
      - `task.claimed`
-     - `task.claim.heartbeat`
-     - `task.claim.released`
-     - `task.completed`
-     - `task.failed`
-     - `task.reconciled.stale_claim`
-   - deletions use `project-signal` (`task.deleted`, `project.deleted`)
+      - `task.claim.heartbeat`
+      - `task.claim.released`
+      - `task.invalidated`
+      - `task.completed`
+      - `task.failed`
+      - `task.reconciled.stale_claim`
+   - deletions and explicit reruns use `project-signal` (`task.deleted`, `task.invalidated`, `project.deleted`)
+
+### 2b) Explicit rerun / invalidation
+- Use `POST /tasks/:id/invalidate` when upstream specs/results changed and downstream work should be re-executed.
+- Scope guidance:
+  - `subtree`: rerun the selected task and its child tree
+  - `downstream`: rerun dependency successors while keeping the selected task state
+  - `both`: rerun the selected task, its tree, and downstream dependency chain
+- Prefer branch-first Git recovery:
+  - keep old branch history intact
+  - create a new branch for the rerun path
+  - link new git refs back into TasQ per task
 
 ### 3) Reclaim behavior check
 - Run smoke:

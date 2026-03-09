@@ -165,11 +165,12 @@ type contextDependency struct {
 }
 
 type taskContext struct {
-	Task         task                `json:"task"`
-	Dependencies []contextDependency `json:"dependencies"`
-	ParentChain  []task              `json:"parent_chain"`
-	RecentRuns   []taskRunSummary    `json:"recent_runs"`
-	GitRefs      []taskGitRefSummary `json:"git_refs"`
+	Task            task                    `json:"task"`
+	Dependencies    []contextDependency     `json:"dependencies"`
+	ParentChain     []task                  `json:"parent_chain"`
+	RecentRuns      []taskRunSummary        `json:"recent_runs"`
+	InterruptedRuns []interruptedRunSummary `json:"interrupted_runs"`
+	GitRefs         []taskGitRefSummary     `json:"git_refs"`
 }
 
 type taskRunSummary struct {
@@ -189,6 +190,16 @@ type taskGitRefSummary struct {
 	BaseCommit string    `json:"base_commit"`
 	CommitSHA  string    `json:"commit_sha"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+type interruptedRunSummary struct {
+	ID         int64      `json:"id"`
+	AgentID    string     `json:"agent_id"`
+	AttemptNo  int        `json:"attempt_no"`
+	FinishedAt *time.Time `json:"finished_at"`
+	Reason     string     `json:"reason"`
+	ResumeHint string     `json:"resume_hint"`
+	ToStatus   string     `json:"to_status"`
 }
 
 type taskEventSummary struct {

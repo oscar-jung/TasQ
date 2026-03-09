@@ -162,6 +162,8 @@ Rules:
 - Keep tasks small enough for one focused worker run.
 - Use required_capabilities sparingly.
 - Keep at least one root task immediately claimable by a generic worker.
+- 같은 파일이나 모듈을 건드릴 가능성이 높다면 넓은 sibling 구조보다 수직 체인 구조를 우선해.
+- 루트 태스크 수는 과도하게 늘리지 말고, 병렬화는 실제로 merge-safe한 경우에만 허용해.
 - Prefer generic capability labels: go, cli, integration, testing, docs.
 - Do not implement code in this session.
 - At the end, report the numeric project_id.
@@ -211,9 +213,15 @@ Rules:
 - Claim only through TasQ MCP tools.
 - Immediately fetch task context after claim.
 - If work may take longer than 60 seconds, send tasq_heartbeat before lease expiry.
+- task context에 `interrupted_runs`가 있으면, 편집 전에 가장 최근 interruption reason과 resume hint를 먼저 확인해.
 - If claim returns no task, stop cleanly.
 - Finish with tasq_complete_task or tasq_fail_task.
 - Include result_payload_version="v2" with summary, changes, paths, commands, tests, artifacts, next_risks.
+- `result_md`는 handoff 품질이어야 하며 아래 섹션을 포함해야 해:
+  - `## Summary`
+  - `## Changes`
+  - `## Verification`
+  - `## Risks`
 ```
 
 ## 에이전트 데모 실행

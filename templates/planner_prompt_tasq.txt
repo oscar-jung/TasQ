@@ -8,6 +8,10 @@ Rules:
 - Keep tasks small enough for one focused worker run.
 - Use required_capabilities sparingly.
 - Keep at least one root task immediately claimable by a generic worker.
+- Prefer vertical decomposition over wide parallel trees when tasks will touch the same module, file group, or deliverable.
+- Keep the number of root tasks low unless there is a clear independent execution stream.
+- If two tasks would likely edit the same files, make them parent/child or dependency-linked instead of siblings.
+- Parallelize only when the work is genuinely merge-safe.
 - Prefer generic capability labels unless specialized routing is truly necessary.
 - Suggested generic labels: go, cli, integration, testing, docs, frontend, backend, db.
 - Do not implement code in this session.

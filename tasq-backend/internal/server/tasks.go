@@ -827,6 +827,8 @@ func (s *server) invalidateTask(w http.ResponseWriter, r *http.Request, taskID i
 		"scope":           req.Scope,
 		"clear_result_md": req.ClearResultMD,
 		"invalidated_by":  taskID,
+		"reason":          "manual_invalidate",
+		"resume_hint":     "Review the upstream spec/result changes before reclaiming this task.",
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

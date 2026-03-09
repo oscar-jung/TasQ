@@ -163,6 +163,8 @@ Rules:
 - Keep tasks small enough for one focused worker run.
 - Use required_capabilities sparingly.
 - Keep at least one root task immediately claimable by a generic worker.
+- Prefer vertical decomposition over wide sibling trees when tasks will touch the same files or modules.
+- Keep root tasks few and meaningful; parallelize only when the work is clearly merge-safe.
 - Prefer generic capability labels: go, cli, integration, testing, docs.
 - Do not implement code in this session.
 - At the end, report the numeric project_id.
@@ -212,9 +214,15 @@ Rules:
 - Claim only through TasQ MCP tools.
 - Immediately fetch task context after claim.
 - If work may take longer than 60 seconds, send tasq_heartbeat before lease expiry.
+- If the task context reports `interrupted_runs`, read the latest interruption reason and resume hint before editing.
 - If claim returns no task, stop cleanly.
 - Finish with tasq_complete_task or tasq_fail_task.
 - Include result_payload_version="v2" with summary, changes, paths, commands, tests, artifacts, next_risks.
+- `result_md` must be handoff quality and include:
+  - `## Summary`
+  - `## Changes`
+  - `## Verification`
+  - `## Risks`
 ```
 
 ## Agent runtime demo
