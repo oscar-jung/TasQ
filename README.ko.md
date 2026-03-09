@@ -60,6 +60,7 @@ docker compose up --build
 - Agent API 계약: `tasq-backend/docs/agent_contract.md`
 - 운영 가이드: `tasq-backend/docs/operations.md`
 - 릴리즈 체크리스트: `tasq-backend/docs/release_checklist.md`
+- MCP 세션 프로파일: `tasq-mcp/docs/session_profiles.md`
 
 ## 런타임 모니터링
 - 좌측 프로젝트 배지:
@@ -82,6 +83,7 @@ PROJECT_ID=1 ACTION=release ./scripts/agent_worker_demo.sh
 ./scripts/topology_move_reorder_smoke.sh
 ./scripts/lease_reclaim_smoke.sh
 ./scripts/capability_claim_smoke.sh
+./scripts/mcp_runtime_smoke.sh
 ./scripts/final_regression_suite.sh
 ```
 
@@ -97,4 +99,3 @@ PROJECT_ID=1 ACTION=release ./scripts/agent_worker_demo.sh
 ## 다음 구현 후보
 - Dependency 그래프 시각화
 - 대시보드 수준의 런타임 알림 요약
-

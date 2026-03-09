@@ -61,6 +61,7 @@ docker compose up --build
 - Agent API contract: `tasq-backend/docs/agent_contract.md`
 - Operations guide: `tasq-backend/docs/operations.md`
 - Release checklist: `tasq-backend/docs/release_checklist.md`
+- MCP session profiles: `tasq-mcp/docs/session_profiles.md`
 
 ## Runtime monitoring
 - Project list badge (left panel):
@@ -83,6 +84,7 @@ PROJECT_ID=1 ACTION=release ./scripts/agent_worker_demo.sh
 ./scripts/topology_move_reorder_smoke.sh
 ./scripts/lease_reclaim_smoke.sh
 ./scripts/capability_claim_smoke.sh
+./scripts/mcp_runtime_smoke.sh
 ./scripts/final_regression_suite.sh
 ```
 

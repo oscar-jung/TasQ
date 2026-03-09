@@ -2,5 +2,6 @@
 node_modules
 /dist
 /bin
+tasq-mcp/server
 tasq-backend/.gocache/
 tasq-backend/.gopath/
