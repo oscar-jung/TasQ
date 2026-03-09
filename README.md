@@ -61,6 +61,7 @@ docker compose up --build
 - Agent API contract: `tasq-backend/docs/agent_contract.md`
 - Operations guide: `tasq-backend/docs/operations.md`
 - Release checklist: `tasq-backend/docs/release_checklist.md`
+- MCP session profiles: `tasq-mcp/docs/session_profiles.md`
 
 ## Runtime monitoring
 - Project list badge (left panel):
