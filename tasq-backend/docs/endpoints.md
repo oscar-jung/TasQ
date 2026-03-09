@@ -48,6 +48,27 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
 - `GET /projects/:project_id/stream`
   - Handler: `(*server).streamProjectEvents` in `internal/server/events.go`
   - Purpose: stream project task events over SSE for near-real-time UI refresh.
+  - SSE event names:
+    - `task-event`: DB-backed task audit/runtime events
+    - `project-signal`: deletion/project-level broker signals
+  - Current `task-event` payload types:
+    - `task.created`
+    - `task.content.updated`
+    - `task.execution_policy.updated`
+    - `task.capabilities.updated`
+    - `task.status.updated`
+    - `task.git.linked`
+    - `task.reordered`
+    - `task.moved`
+    - `task.claimed`
+    - `task.claim.heartbeat`
+    - `task.claim.released`
+    - `task.completed`
+    - `task.failed`
+    - `task.reconciled.stale_claim`
+  - Current `project-signal` payload types:
+    - `task.deleted`
+    - `project.deleted`
 
 - `POST /projects/:project_id/claims/reconcile`
   - Handler: `(*server).reconcileProjectClaims` in `internal/server/reconcile.go`

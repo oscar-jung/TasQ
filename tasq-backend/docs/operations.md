@@ -34,6 +34,19 @@ cat tasq_backup.sql | docker compose exec -T db psql -U tasq -d tasq
 2. Check `docker compose logs --tail=200 web`.
 3. Rebuild web: `docker compose up -d --build web`.
 
+### Realtime notes
+- UI realtime is hybrid:
+  - SSE stream: `/projects/:id/stream`
+  - polling fallback/companion: runtime alerts + periodic validation
+- SSE emits:
+  - `task-event`: DB-backed task lifecycle/audit events
+  - `project-signal`: in-memory broker signals for deletion-oriented updates
+- If realtime looks stale but manual refresh works:
+  1. verify `/projects/:id/stream` stays connected
+  2. check browser network tab for SSE reconnect loops
+  3. confirm API logs do not show restarts
+  4. rely on polling as fallback while debugging
+
 ### 2) Claim stuck / no claimable task
 1. Verify task eligibility:
    - parent done
@@ -51,6 +64,23 @@ cat tasq_backup.sql | docker compose exec -T db psql -U tasq -d tasq
    - the queue will not assign those tasks again
    - treat this as human-action-required, not an auto-retry case
    - fix the task definition, underlying implementation issue, or raise `max_attempts`
+8. If UI does not reflect status/content changes immediately:
+   - verify the corresponding `task-event` type is emitted:
+     - `task.created`
+     - `task.content.updated`
+     - `task.execution_policy.updated`
+     - `task.capabilities.updated`
+     - `task.status.updated`
+     - `task.git.linked`
+     - `task.reordered`
+     - `task.moved`
+     - `task.claimed`
+     - `task.claim.heartbeat`
+     - `task.claim.released`
+     - `task.completed`
+     - `task.failed`
+     - `task.reconciled.stale_claim`
+   - deletions use `project-signal` (`task.deleted`, `project.deleted`)
 
 ### 3) Reclaim behavior check
 - Run smoke:

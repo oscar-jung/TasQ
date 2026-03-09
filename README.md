@@ -80,6 +80,49 @@ codex mcp add tasq-http --url http://localhost:8091/mcp
   - You can change heartbeat threshold and refresh manually.
   - Queue summary includes `done/total`, `claimable`, `blocked`, and `exhausted`.
 
+## Realtime updates
+TasQ uses a hybrid approach:
+- SSE for event-driven UI refresh
+- polling for time-based runtime alerts such as stale leases and overdue heartbeats
+
+SSE endpoint:
+- `GET /projects/:project_id/stream`
+
+SSE event types:
+- `task-event`
+  - payload is a task event row
+  - currently used for:
+    - `task.created`
+    - `task.content.updated`
+    - `task.execution_policy.updated`
+    - `task.capabilities.updated`
+    - `task.status.updated`
+    - `task.git.linked`
+    - `task.reordered`
+    - `task.moved`
+    - `task.claimed`
+    - `task.claim.heartbeat`
+    - `task.claim.released`
+    - `task.completed`
+    - `task.failed`
+    - `task.reconciled.stale_claim`
+- `project-signal`
+  - lightweight broker signal for cases that are awkward to keep in `task_events`
+  - currently used for:
+    - `task.deleted`
+    - `project.deleted`
+
+UI refresh behavior:
+- tree refresh:
+  - `task.created`, `task.moved`, `task.reordered`, `task.status.updated`, `task.completed`, `task.failed`, `task.claimed`, `task.claim.released`, `task.reconciled.stale_claim`, `task.deleted`
+- selected task detail / observability refresh:
+  - `task.content.updated`, `task.execution_policy.updated`, `task.capabilities.updated`, `task.git.linked`, `task.status.updated`, `task.completed`, `task.failed`, `task.claimed`, `task.claim.heartbeat`, `task.claim.released`, `task.reconciled.stale_claim`
+- runtime alerts refresh:
+  - claim / heartbeat / completion / failure / reconcile / delete flows
+
+Design note:
+- deletion uses `project-signal` because `task_events` rows cascade with the deleted task and are not a reliable transport for post-delete UI updates
+
 ## Worker supervisor
 Planner sessions should emit a worker spawn spec JSON file and then launch:
 

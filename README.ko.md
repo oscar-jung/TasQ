@@ -79,6 +79,49 @@ codex mcp add tasq-http --url http://localhost:8091/mcp
   - heartbeat 기준값 조정 후 수동 refresh 가능
   - 큐 요약(`done/total`, `claimable`, `blocked`, `exhausted`) 제공
 
+## 실시간 반영
+TasQ는 아래 두 방식을 함께 사용합니다.
+- SSE: 이벤트 기반 UI 갱신
+- polling: stale lease, heartbeat overdue 같은 시간 기반 런타임 경보 보정
+
+SSE 엔드포인트:
+- `GET /projects/:project_id/stream`
+
+SSE 이벤트 타입:
+- `task-event`
+  - payload는 task event row
+  - 현재 다음 이벤트에 사용:
+    - `task.created`
+    - `task.content.updated`
+    - `task.execution_policy.updated`
+    - `task.capabilities.updated`
+    - `task.status.updated`
+    - `task.git.linked`
+    - `task.reordered`
+    - `task.moved`
+    - `task.claimed`
+    - `task.claim.heartbeat`
+    - `task.claim.released`
+    - `task.completed`
+    - `task.failed`
+    - `task.reconciled.stale_claim`
+- `project-signal`
+  - `task_events`에 남기기 애매한 케이스를 위한 경량 브로커 신호
+  - 현재 다음 이벤트에 사용:
+    - `task.deleted`
+    - `project.deleted`
+
+프론트 갱신 규칙:
+- tree refresh:
+  - `task.created`, `task.moved`, `task.reordered`, `task.status.updated`, `task.completed`, `task.failed`, `task.claimed`, `task.claim.released`, `task.reconciled.stale_claim`, `task.deleted`
+- 선택된 task detail / observability refresh:
+  - `task.content.updated`, `task.execution_policy.updated`, `task.capabilities.updated`, `task.git.linked`, `task.status.updated`, `task.completed`, `task.failed`, `task.claimed`, `task.claim.heartbeat`, `task.claim.released`, `task.reconciled.stale_claim`
+- runtime alerts refresh:
+  - claim / heartbeat / complete / fail / reconcile / delete 계열 이벤트
+
+설계 메모:
+- 삭제는 `task_events` row가 FK cascade로 함께 사라질 수 있기 때문에, post-delete UI 갱신 신호로는 `project-signal`을 사용합니다
+
 ## 워커 스포너
 플래너 세션은 worker spawn spec JSON 파일을 만들고, 이후 아래 스크립트를 실행하면 됩니다.
 
