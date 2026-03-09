@@ -72,6 +72,28 @@ type ProjectEventsResponse = {
   events: TaskEventSummary[]
 }
 
+type RuntimeClaimAlert = {
+  claim_id: number
+  task_id: number
+  agent_id: string
+  lease_until: string
+  heartbeat_at: string | null
+  seconds_since_heartbeat: number
+}
+
+type OrphanTaskAlert = {
+  task_id: number
+  started_at: string | null
+}
+
+type RuntimeAlertsResponse = {
+  project_id: number
+  heartbeat_stale_seconds: number
+  stale_active_claims: RuntimeClaimAlert[]
+  heartbeat_overdue_claims: RuntimeClaimAlert[]
+  orphan_in_progress_tasks: OrphanTaskAlert[]
+}
+
 type TaskCapabilitiesResponse = {
   task_id: number
   required_capabilities: string[]
@@ -133,6 +155,10 @@ export function App() {
   const [isLoadingTaskContext, setIsLoadingTaskContext] = useState(false)
   const [taskEvents, setTaskEvents] = useState<TaskEventSummary[]>([])
   const [projectEvents, setProjectEvents] = useState<TaskEventSummary[]>([])
+  const [runtimeAlerts, setRuntimeAlerts] = useState<RuntimeAlertsResponse | null>(null)
+  const [isLoadingRuntimeAlerts, setIsLoadingRuntimeAlerts] = useState(false)
+  const [runtimeAlertsError, setRuntimeAlertsError] = useState('')
+  const [heartbeatAlertThresholdDraft, setHeartbeatAlertThresholdDraft] = useState('300')
   const [eventTypeFilter, setEventTypeFilter] = useState('')
   const [eventActorFilter, setEventActorFilter] = useState('')
   const [eventFromDraft, setEventFromDraft] = useState('')
@@ -335,6 +361,9 @@ export function App() {
       setTaskEventsError('')
       setProjectEvents([])
       setProjectEventsError('')
+      setRuntimeAlerts(null)
+      setRuntimeAlertsError('')
+      setHeartbeatAlertThresholdDraft('300')
       setMaxAttemptsDraft('1')
       setGitRepoDraft('')
       setGitBranchDraft('')
@@ -446,6 +475,9 @@ export function App() {
       setProjectEvents([])
       setProjectEventsError('')
       setIsLoadingProjectEvents(false)
+      setRuntimeAlerts(null)
+      setRuntimeAlertsError('')
+      setIsLoadingRuntimeAlerts(false)
       return
     }
     let cancelled = false
@@ -464,6 +496,37 @@ export function App() {
       } finally {
         if (!cancelled) {
           setIsLoadingProjectEvents(false)
+        }
+      }
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedProjectID])
+
+  useEffect(() => {
+    if (!selectedProjectID) return
+    let cancelled = false
+    const run = async () => {
+      setIsLoadingRuntimeAlerts(true)
+      setRuntimeAlertsError('')
+      try {
+        const threshold = Number(heartbeatAlertThresholdDraft)
+        const data = await fetchRuntimeAlerts(
+          selectedProjectID,
+          Number.isInteger(threshold) && threshold > 0 ? threshold : undefined
+        )
+        if (cancelled) return
+        setRuntimeAlerts(data)
+      } catch (err) {
+        if (cancelled) return
+        const message = err instanceof Error ? err.message : 'failed to load runtime alerts'
+        setRuntimeAlertsError(message)
+        setRuntimeAlerts(null)
+      } finally {
+        if (!cancelled) {
+          setIsLoadingRuntimeAlerts(false)
         }
       }
     }
@@ -616,6 +679,45 @@ export function App() {
     return {
       project_id: raw.project_id,
       events: Array.isArray(raw.events) ? raw.events : []
+    }
+  }
+
+  async function fetchRuntimeAlerts(projectID: number, heartbeatStaleSeconds?: number) {
+    const q =
+      heartbeatStaleSeconds && heartbeatStaleSeconds > 0
+        ? `?heartbeat_stale_seconds=${heartbeatStaleSeconds}`
+        : ''
+    const res = await fetch(`${apiBase}/projects/${projectID}/runtime-alerts${q}`)
+    if (!res.ok) {
+      const message = await res.text()
+      throw new Error(message || 'failed to fetch runtime alerts')
+    }
+    const raw = (await res.json()) as RuntimeAlertsResponse
+    return {
+      project_id: raw.project_id,
+      heartbeat_stale_seconds: raw.heartbeat_stale_seconds,
+      stale_active_claims: Array.isArray(raw.stale_active_claims) ? raw.stale_active_claims : [],
+      heartbeat_overdue_claims: Array.isArray(raw.heartbeat_overdue_claims) ? raw.heartbeat_overdue_claims : [],
+      orphan_in_progress_tasks: Array.isArray(raw.orphan_in_progress_tasks) ? raw.orphan_in_progress_tasks : []
+    }
+  }
+
+  async function refreshRuntimeAlerts() {
+    if (!selectedProjectID) return
+    const threshold = Number(heartbeatAlertThresholdDraft)
+    setIsLoadingRuntimeAlerts(true)
+    setRuntimeAlertsError('')
+    try {
+      const data = await fetchRuntimeAlerts(
+        selectedProjectID,
+        Number.isInteger(threshold) && threshold > 0 ? threshold : undefined
+      )
+      setRuntimeAlerts(data)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'failed to refresh runtime alerts'
+      setRuntimeAlertsError(message)
+    } finally {
+      setIsLoadingRuntimeAlerts(false)
     }
   }
 
@@ -809,6 +911,12 @@ export function App() {
     setTaskEvents(taskEventData.events)
     if (projectID) {
       setProjectEvents(projectEventData.events)
+      const threshold = Number(heartbeatAlertThresholdDraft)
+      const runtime = await fetchRuntimeAlerts(
+        projectID,
+        Number.isInteger(threshold) && threshold > 0 ? threshold : undefined
+      )
+      setRuntimeAlerts(runtime)
     }
   }
 
@@ -1755,6 +1863,89 @@ export function App() {
                           <option value="released">released</option>
                         </select>
                       </div>
+                    </div>
+
+                    <div className="rounded-md border bg-background/40 p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Runtime Alerts</p>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            className="h-8 w-28"
+                            type="number"
+                            min={1}
+                            placeholder="stale sec"
+                            value={heartbeatAlertThresholdDraft}
+                            onChange={(e) => setHeartbeatAlertThresholdDraft(e.target.value)}
+                          />
+                          <Button size="sm" variant="outline" onClick={() => void refreshRuntimeAlerts()} disabled={isLoadingRuntimeAlerts}>
+                            {isLoadingRuntimeAlerts ? 'Refreshing...' : 'Refresh'}
+                          </Button>
+                        </div>
+                      </div>
+                      {runtimeAlertsError && <p className="mt-2 text-xs text-red-300">{runtimeAlertsError}</p>}
+                      {!runtimeAlertsError && !runtimeAlerts && isLoadingRuntimeAlerts && (
+                        <p className="mt-2 text-xs text-muted-foreground">Loading runtime alerts...</p>
+                      )}
+                      {runtimeAlerts && (
+                        <div className="mt-2 space-y-2">
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            <div className="rounded border border-border/60 bg-background/60 p-1.5">
+                              <p className="text-muted-foreground">Stale Claims</p>
+                              <p className="font-semibold">{runtimeAlerts.stale_active_claims.length}</p>
+                            </div>
+                            <div className="rounded border border-border/60 bg-background/60 p-1.5">
+                              <p className="text-muted-foreground">Heartbeat Overdue</p>
+                              <p className="font-semibold">{runtimeAlerts.heartbeat_overdue_claims.length}</p>
+                            </div>
+                            <div className="rounded border border-border/60 bg-background/60 p-1.5">
+                              <p className="text-muted-foreground">Orphan In Progress</p>
+                              <p className="font-semibold">{runtimeAlerts.orphan_in_progress_tasks.length}</p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-2 xl:grid-cols-3">
+                            <div className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
+                              <p className="mb-1 font-medium text-foreground/90">Stale Claims</p>
+                              <div className="max-h-24 space-y-1 overflow-y-auto">
+                                {runtimeAlerts.stale_active_claims.length === 0 && (
+                                  <p className="text-muted-foreground">None</p>
+                                )}
+                                {runtimeAlerts.stale_active_claims.map((item) => (
+                                  <p key={item.claim_id} className="text-muted-foreground">
+                                    C#{item.claim_id} T#{item.task_id} {item.agent_id}
+                                  </p>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
+                              <p className="mb-1 font-medium text-foreground/90">Heartbeat Overdue</p>
+                              <div className="max-h-24 space-y-1 overflow-y-auto">
+                                {runtimeAlerts.heartbeat_overdue_claims.length === 0 && (
+                                  <p className="text-muted-foreground">None</p>
+                                )}
+                                {runtimeAlerts.heartbeat_overdue_claims.map((item) => (
+                                  <p key={item.claim_id} className="text-muted-foreground">
+                                    C#{item.claim_id} T#{item.task_id} {item.seconds_since_heartbeat}s
+                                  </p>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
+                              <p className="mb-1 font-medium text-foreground/90">Orphan In Progress</p>
+                              <div className="max-h-24 space-y-1 overflow-y-auto">
+                                {runtimeAlerts.orphan_in_progress_tasks.length === 0 && (
+                                  <p className="text-muted-foreground">None</p>
+                                )}
+                                {runtimeAlerts.orphan_in_progress_tasks.map((item) => (
+                                  <p key={item.task_id} className="text-muted-foreground">
+                                    T#{item.task_id}
+                                  </p>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div>
