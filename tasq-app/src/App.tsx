@@ -27,6 +27,29 @@ type TaskContentPatch = {
 }
 
 type TaskDeleteStrategy = 'promote_children' | 'delete_subtree'
+type TaskRunSummary = {
+  id: number
+  agent_id: string
+  attempt_no: number
+  status: 'running' | 'completed' | 'failed' | 'released'
+  started_at: string
+  finished_at: string | null
+}
+
+type TaskGitRefSummary = {
+  id: number
+  repo: string
+  branch: string
+  base_commit: string
+  commit_sha: string
+  created_at: string
+}
+
+type TaskContextResponse = {
+  recent_runs: TaskRunSummary[]
+  git_refs: TaskGitRefSummary[]
+}
+
 type TreeValidationReport = {
   project_id: number
   checked_tasks: number
@@ -61,7 +84,17 @@ export function App() {
   const [isSavingSpec, setIsSavingSpec] = useState(false)
   const [isSavingResult, setIsSavingResult] = useState(false)
   const [isSavingStatus, setIsSavingStatus] = useState(false)
+  const [isSavingExecutionPolicy, setIsSavingExecutionPolicy] = useState(false)
+  const [isSavingGitLink, setIsSavingGitLink] = useState(false)
   const [taskMessage, setTaskMessage] = useState('')
+  const [taskContext, setTaskContext] = useState<TaskContextResponse | null>(null)
+  const [taskContextError, setTaskContextError] = useState('')
+  const [isLoadingTaskContext, setIsLoadingTaskContext] = useState(false)
+  const [maxAttemptsDraft, setMaxAttemptsDraft] = useState('1')
+  const [gitRepoDraft, setGitRepoDraft] = useState('')
+  const [gitBranchDraft, setGitBranchDraft] = useState('')
+  const [gitBaseCommitDraft, setGitBaseCommitDraft] = useState('')
+  const [gitCommitDraft, setGitCommitDraft] = useState('')
   const [addChildModalTask, setAddChildModalTask] = useState<TaskNode | null>(null)
   const [addChildTitle, setAddChildTitle] = useState('')
   const [isAddingChild, setIsAddingChild] = useState(false)
@@ -164,6 +197,13 @@ export function App() {
       setIsSpecDirty(false)
       setIsResultDirty(false)
       setTaskMessage('')
+      setTaskContext(null)
+      setTaskContextError('')
+      setMaxAttemptsDraft('1')
+      setGitRepoDraft('')
+      setGitBranchDraft('')
+      setGitBaseCommitDraft('')
+      setGitCommitDraft('')
       return
     }
 
@@ -176,6 +216,7 @@ export function App() {
       setIsSpecDirty(false)
       setIsResultDirty(false)
       setTaskMessage('')
+      setMaxAttemptsDraft(String(selectedTask.max_attempts))
       return
     }
 
@@ -188,7 +229,53 @@ export function App() {
     if (!isResultDirty && !isSavingResult) {
       setTaskResultDraft(selectedTask.result_md)
     }
-  }, [selectedTask, editingTaskTitle, isSavingTitle, isSpecDirty, isSavingSpec, isResultDirty, isSavingResult])
+    if (!isSavingExecutionPolicy) {
+      setMaxAttemptsDraft(String(selectedTask.max_attempts))
+    }
+  }, [
+    selectedTask,
+    editingTaskTitle,
+    isSavingTitle,
+    isSpecDirty,
+    isSavingSpec,
+    isResultDirty,
+    isSavingResult,
+    isSavingExecutionPolicy
+  ])
+
+  useEffect(() => {
+    if (!selectedTaskID) {
+      setTaskContext(null)
+      setTaskContextError('')
+      setIsLoadingTaskContext(false)
+      return
+    }
+
+    let cancelled = false
+    const run = async () => {
+      setIsLoadingTaskContext(true)
+      setTaskContextError('')
+      try {
+        const ctx = await fetchTaskContext(selectedTaskID)
+        if (cancelled) return
+        setTaskContext(ctx)
+      } catch (err) {
+        if (cancelled) return
+        const message = err instanceof Error ? err.message : 'failed to load task context'
+        setTaskContextError(message)
+        setTaskContext(null)
+      } finally {
+        if (!cancelled) {
+          setIsLoadingTaskContext(false)
+        }
+      }
+    }
+
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedTaskID])
 
   function handleSpecDraftChange(next: string) {
     setTaskSpecDraft(next)
@@ -259,6 +346,15 @@ export function App() {
     if (selectedProjectID) {
       await fetchTaskTree(selectedProjectID)
     }
+  }
+
+  async function fetchTaskContext(taskID: number) {
+    const res = await fetch(`${apiBase}/tasks/${taskID}/context`)
+    if (!res.ok) {
+      const message = await res.text()
+      throw new Error(message || 'failed to fetch task context')
+    }
+    return (await res.json()) as TaskContextResponse
   }
 
   function hasValidationIssues(report: TreeValidationReport) {
@@ -356,6 +452,40 @@ export function App() {
     if (selectedProjectID) {
       await fetchTaskTree(selectedProjectID)
     }
+  }
+
+  async function patchExecutionPolicy(taskID: number, maxAttempts: number) {
+    const res = await fetch(`${apiBase}/tasks/${taskID}/execution-policy`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ max_attempts: maxAttempts })
+    })
+    if (!res.ok) {
+      const message = await res.text()
+      throw new Error(message || 'failed to update execution policy')
+    }
+    if (selectedProjectID) {
+      await fetchTaskTree(selectedProjectID)
+    }
+    const ctx = await fetchTaskContext(taskID)
+    setTaskContext(ctx)
+  }
+
+  async function linkTaskGitRef(
+    taskID: number,
+    payload: { repo: string; branch: string; base_commit: string; commit_sha: string }
+  ) {
+    const res = await fetch(`${apiBase}/tasks/${taskID}/git-link`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    if (!res.ok) {
+      const message = await res.text()
+      throw new Error(message || 'failed to link git ref')
+    }
+    const ctx = await fetchTaskContext(taskID)
+    setTaskContext(ctx)
   }
 
   async function moveTask(taskID: number, newParentTaskID: number | null) {
@@ -566,12 +696,67 @@ export function App() {
     setIsSavingStatus(true)
     try {
       await patchTaskStatus(selectedTask.id, nextStatus)
+      const ctx = await fetchTaskContext(selectedTask.id)
+      setTaskContext(ctx)
       setTaskMessage('Task status updated.')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'failed to update task status'
       setTaskMessage(message)
     } finally {
       setIsSavingStatus(false)
+    }
+  }
+
+  async function saveExecutionPolicy() {
+    if (!selectedTask) return
+    const parsed = Number(maxAttemptsDraft)
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      setTaskMessage('Max attempts must be an integer >= 1.')
+      return
+    }
+    if (parsed === selectedTask.max_attempts) return
+
+    setTaskMessage('')
+    setIsSavingExecutionPolicy(true)
+    try {
+      await patchExecutionPolicy(selectedTask.id, parsed)
+      setTaskMessage('Execution policy saved.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'failed to save execution policy'
+      setTaskMessage(message)
+    } finally {
+      setIsSavingExecutionPolicy(false)
+    }
+  }
+
+  async function saveGitLink(e: FormEvent) {
+    e.preventDefault()
+    if (!selectedTask) return
+    const payload = {
+      repo: gitRepoDraft.trim(),
+      branch: gitBranchDraft.trim(),
+      base_commit: gitBaseCommitDraft.trim(),
+      commit_sha: gitCommitDraft.trim()
+    }
+    if (!payload.repo || !payload.branch || !payload.base_commit || !payload.commit_sha) {
+      setTaskMessage('Repo, branch, base commit, and commit SHA are required.')
+      return
+    }
+
+    setTaskMessage('')
+    setIsSavingGitLink(true)
+    try {
+      await linkTaskGitRef(selectedTask.id, payload)
+      setGitRepoDraft('')
+      setGitBranchDraft('')
+      setGitBaseCommitDraft('')
+      setGitCommitDraft('')
+      setTaskMessage('Git link added.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'failed to add git link'
+      setTaskMessage(message)
+    } finally {
+      setIsSavingGitLink(false)
     }
   }
 
@@ -876,6 +1061,107 @@ export function App() {
                 </div>
               </div>
 
+              <div className="rounded-md border bg-muted/20 p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Execution</p>
+                <div className="mt-2 flex items-end gap-2">
+                  <div className="w-28">
+                    <p className="mb-1 text-[11px] text-muted-foreground">Max attempts</p>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={maxAttemptsDraft}
+                      onChange={(e) => setMaxAttemptsDraft(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                  <Button size="sm" variant="outline" disabled={isSavingExecutionPolicy} onClick={() => void saveExecutionPolicy()}>
+                    {isSavingExecutionPolicy ? 'Saving...' : 'Save policy'}
+                  </Button>
+                </div>
+
+                <form className="mt-3 space-y-2" onSubmit={saveGitLink}>
+                  <p className="text-[11px] text-muted-foreground">Link Git result</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      placeholder="repo"
+                      value={gitRepoDraft}
+                      onChange={(e) => setGitRepoDraft(e.target.value)}
+                      disabled={isSavingGitLink}
+                    />
+                    <Input
+                      placeholder="branch"
+                      value={gitBranchDraft}
+                      onChange={(e) => setGitBranchDraft(e.target.value)}
+                      disabled={isSavingGitLink}
+                    />
+                    <Input
+                      placeholder="base commit"
+                      value={gitBaseCommitDraft}
+                      onChange={(e) => setGitBaseCommitDraft(e.target.value)}
+                      disabled={isSavingGitLink}
+                    />
+                    <Input
+                      placeholder="commit sha"
+                      value={gitCommitDraft}
+                      onChange={(e) => setGitCommitDraft(e.target.value)}
+                      disabled={isSavingGitLink}
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <Button type="submit" size="sm" variant="outline" disabled={isSavingGitLink}>
+                      {isSavingGitLink ? 'Linking...' : 'Add Git Link'}
+                    </Button>
+                  </div>
+                </form>
+
+                {isLoadingTaskContext && <p className="mt-3 text-xs text-muted-foreground">Loading execution context...</p>}
+                {taskContextError && <p className="mt-3 text-xs text-red-300">{taskContextError}</p>}
+
+                {taskContext && (
+                  <div className="mt-3 grid gap-3">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Recent Runs</p>
+                      {taskContext.recent_runs.length === 0 && (
+                        <p className="mt-1 text-xs text-muted-foreground">No run history yet.</p>
+                      )}
+                      {taskContext.recent_runs.length > 0 && (
+                        <div className="mt-1 max-h-32 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
+                          {taskContext.recent_runs.map((run) => (
+                            <div key={run.id} className="flex items-center justify-between text-xs">
+                              <span className="truncate text-muted-foreground">
+                                #{run.attempt_no} {run.agent_id}
+                              </span>
+                              <span className="uppercase text-foreground/85">{run.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Git Refs</p>
+                      {taskContext.git_refs.length === 0 && (
+                        <p className="mt-1 text-xs text-muted-foreground">No git refs linked yet.</p>
+                      )}
+                      {taskContext.git_refs.length > 0 && (
+                        <div className="mt-1 max-h-32 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
+                          {taskContext.git_refs.map((ref) => (
+                            <div key={ref.id} className="text-xs">
+                              <p className="truncate text-foreground/90">
+                                {ref.repo} · {ref.branch}
+                              </p>
+                              <p className="truncate text-muted-foreground">
+                                {ref.base_commit.slice(0, 12)} → {ref.commit_sha.slice(0, 12)}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <MarkdownEditor
                 label="Task Spec"
                 value={taskSpecDraft}
@@ -986,4 +1272,3 @@ export function App() {
     </main>
   )
 }
-

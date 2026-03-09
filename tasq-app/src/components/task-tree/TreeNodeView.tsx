@@ -5,7 +5,8 @@ export type TaskNode = {
   title: string
   spec_md: string
   result_md: string
-  status: 'planned' | 'in_progress' | 'done'
+  status: 'planned' | 'in_progress' | 'done' | 'failed'
+  max_attempts: number
   display_order: number
   children: TaskNode[]
 }
@@ -22,12 +23,14 @@ function nodeSpanWidth(units: number) {
 function statusLabel(status: TaskNode['status']) {
   if (status === 'in_progress') return 'In Progress'
   if (status === 'done') return 'Done'
+  if (status === 'failed') return 'Failed'
   return 'Planned'
 }
 
 function statusDotClass(status: TaskNode['status']) {
   if (status === 'in_progress') return 'bg-amber-400'
   if (status === 'done') return 'bg-emerald-400'
+  if (status === 'failed') return 'bg-rose-400'
   return 'bg-slate-400'
 }
 

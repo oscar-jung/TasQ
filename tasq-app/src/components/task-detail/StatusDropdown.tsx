@@ -1,29 +1,32 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 
-export type TaskStatus = 'planned' | 'in_progress' | 'done'
+export type TaskStatus = 'planned' | 'in_progress' | 'done' | 'failed'
 
 function statusLabel(status: TaskStatus) {
   if (status === 'in_progress') return 'In Progress'
   if (status === 'done') return 'Done'
+  if (status === 'failed') return 'Failed'
   return 'Planned'
 }
 
 function statusDotClass(status: TaskStatus) {
   if (status === 'in_progress') return 'bg-amber-400'
   if (status === 'done') return 'bg-emerald-400'
+  if (status === 'failed') return 'bg-rose-400'
   return 'bg-slate-400'
 }
 
 function statusBorderClass(status: TaskStatus) {
   if (status === 'in_progress') return 'border-amber-400/50'
   if (status === 'done') return 'border-emerald-400/50'
+  if (status === 'failed') return 'border-rose-400/50'
   return 'border-slate-400/50'
 }
 
 function canSelectStatus(nextStatus: TaskStatus, parentStatus: TaskStatus | null) {
   if (!parentStatus) return true
-  if (parentStatus === 'planned' || parentStatus === 'in_progress') {
+  if (parentStatus !== 'done') {
     return nextStatus === 'planned'
   }
   return true
@@ -62,8 +65,8 @@ export function StatusDropdown({
     }
   }, [open])
 
-  const options: TaskStatus[] = ['planned', 'in_progress', 'done']
-  const parentConstrained = parentStatus === 'planned' || parentStatus === 'in_progress'
+  const options: TaskStatus[] = ['planned', 'in_progress', 'done', 'failed']
+  const parentConstrained = parentStatus !== null && parentStatus !== 'done'
 
   return (
     <div className="relative w-full" ref={rootRef}>
