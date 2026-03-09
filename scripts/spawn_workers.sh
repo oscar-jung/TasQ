@@ -159,7 +159,7 @@ print_progress_snapshot() {
     echo "[active] ${active_titles}"
   fi
 
-  done_ids="$(echo "${tasks_json}" | jq -r '[.[] | select(.status == "done") | .id] | sort | join(\",\")')"
+  done_ids="$(echo "${tasks_json}" | jq -r '[.[] | select(.status == "done") | .id] | sort | join(",")')"
   newly_done="$(jq -nr --arg prev "${PREV_DONE_IDS}" --arg curr "${done_ids}" '
     (($prev | split(",") | map(select(length > 0) | tonumber)) // []) as $p
     | (($curr | split(",") | map(select(length > 0) | tonumber)) // []) as $c
