@@ -1900,7 +1900,13 @@ export function App() {
                       value={requiredCapabilitiesDraft}
                       onChange={(e) => setRequiredCapabilitiesDraft(e.target.value)}
                     />
-                    <Button size="sm" variant="outline" disabled={isSavingCapabilities} onClick={() => void saveTaskCapabilities()}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 whitespace-nowrap"
+                      disabled={isSavingCapabilities}
+                      onClick={() => void saveTaskCapabilities()}
+                    >
                       {isSavingCapabilities ? 'Saving...' : 'Save capabilities'}
                     </Button>
                   </div>
