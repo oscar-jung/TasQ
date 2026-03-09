@@ -353,6 +353,22 @@ export function App() {
     })
   }, [taskContext, runStatusFilter, runAgentFilter])
 
+  const gitRecoverySummary = useMemo(() => {
+    if (!taskContext) {
+      return { baseline: null, rerunBranch: null, produced: null } as {
+        baseline: TaskGitRefSummary | null
+        rerunBranch: TaskGitRefSummary | null
+        produced: TaskGitRefSummary | null
+      }
+    }
+
+    return {
+      baseline: taskContext.git_refs.find((ref) => ref.ref_kind === 'baseline') ?? null,
+      rerunBranch: taskContext.git_refs.find((ref) => ref.ref_kind === 'rerun_branch') ?? null,
+      produced: taskContext.git_refs.find((ref) => ref.ref_kind === 'produced') ?? null
+    }
+  }, [taskContext])
+
   const filteredTaskEvents = useMemo(() => {
     const typeNeedle = eventTypeFilter.trim().toLowerCase()
     const actorNeedle = eventActorFilter.trim().toLowerCase()
@@ -2710,6 +2726,51 @@ export function App() {
                               ))}
                             </div>
                           )}
+                        </div>
+
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Git Recovery Summary</p>
+                          <div className="mt-1 grid gap-2 rounded-md border bg-background/50 p-2 text-xs xl:grid-cols-3">
+                            <div className="rounded border border-border/60 bg-background/40 p-2">
+                              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Baseline</p>
+                              {gitRecoverySummary.baseline ? (
+                                <>
+                                  <p className="mt-1 truncate text-foreground/90">{gitRecoverySummary.baseline.branch}</p>
+                                  <p className="truncate text-muted-foreground">
+                                    {gitRecoverySummary.baseline.base_commit.slice(0, 12)}
+                                  </p>
+                                </>
+                              ) : (
+                                <p className="mt-1 text-muted-foreground">Not linked</p>
+                              )}
+                            </div>
+                            <div className="rounded border border-border/60 bg-background/40 p-2">
+                              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Rerun Branch</p>
+                              {gitRecoverySummary.rerunBranch ? (
+                                <>
+                                  <p className="mt-1 truncate text-foreground/90">{gitRecoverySummary.rerunBranch.branch}</p>
+                                  <p className="truncate text-muted-foreground">
+                                    {gitRecoverySummary.rerunBranch.commit_sha.slice(0, 12)}
+                                  </p>
+                                </>
+                              ) : (
+                                <p className="mt-1 text-muted-foreground">Not linked</p>
+                              )}
+                            </div>
+                            <div className="rounded border border-border/60 bg-background/40 p-2">
+                              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Produced</p>
+                              {gitRecoverySummary.produced ? (
+                                <>
+                                  <p className="mt-1 truncate text-foreground/90">{gitRecoverySummary.produced.branch}</p>
+                                  <p className="truncate text-muted-foreground">
+                                    {gitRecoverySummary.produced.commit_sha.slice(0, 12)}
+                                  </p>
+                                </>
+                              ) : (
+                                <p className="mt-1 text-muted-foreground">Not linked</p>
+                              )}
+                            </div>
+                          </div>
                         </div>
 
                         <div>

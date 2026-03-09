@@ -229,6 +229,10 @@ Rules:
 - If this session restarts after interruption, do not assume the prior claim is still valid. Claim fresh work from TasQ.
 - If claim returns no task, exit cleanly.
 - Keep the result payload factual and concise.
+- When linking git refs, classify them explicitly:
+  - baseline
+  - rerun_branch
+  - produced
 - Required capabilities for this worker: ${capabilities_csv}
 
 Loop:
@@ -241,7 +245,10 @@ Loop:
 7) Save tasq_save_checkpoint notes when progress reaches a meaningful checkpoint.
 8) If success, call tasq_complete_task with result_md and result_payload_version="v2".
 9) If failure, call tasq_fail_task with reason and result_payload_version="v2".
-10) For reruns, prefer a fresh branch and then call tasq_link_git_ref with branch/base/commit refs.
+10) For reruns, prefer a fresh branch and call tasq_link_git_ref with explicit ref_kind values:
+    - baseline for the branch point commit
+    - rerun_branch for the rerun branch marker
+    - produced for the commit created by this task
 11) Repeat until no claimable task remains.
 
 Result payload v2 must include:
