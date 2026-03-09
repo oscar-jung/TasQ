@@ -131,7 +131,7 @@ Planner sessions should emit a worker spawn spec JSON file and then launch:
 ```
 
 If the planner did not generate `workers.json`, you can bootstrap one manually from:
-- [examples/workers.sample.json](/Users/jung-yeon-woo/Development/Projects/tasq/examples/workers.sample.json)
+- [examples/workers.sample.json](/path/to//tasq/examples/workers.sample.json)
 
 Spawner behavior:
 - starts one `codex exec` worker session per worker spec
@@ -180,14 +180,14 @@ Why stop on `max_attempts` exhaustion:
 ### 1) Planner prompt
 Use this in a fresh Codex CLI session after `tasq-http` MCP is registered:
 
-- Template file: [templates/planner_prompt_tasq.txt](/Users/jung-yeon-woo/Development/Projects/tasq/templates/planner_prompt_tasq.txt)
-- Decomposition guide: [docs/planner_decomposition_guide.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/planner_decomposition_guide.md)
-- Review checklist: [docs/planner_review_checklist.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/planner_review_checklist.md)
-- Agent code project example: [docs/planner_example_agent_code_project.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/planner_example_agent_code_project.md)
-- Worker spec sample: [examples/workers.sample.json](/Users/jung-yeon-woo/Development/Projects/tasq/examples/workers.sample.json)
-- Worker spec schema: [schemas/workers.schema.json](/Users/jung-yeon-woo/Development/Projects/tasq/schemas/workers.schema.json)
-- Agent execution demo: [docs/demo_agent_git_execution.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_agent_git_execution.md)
-- Manual planning demo: [docs/demo_manual_plan_only.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_manual_plan_only.md)
+- Template file: [templates/planner_prompt_tasq.txt](/path/to//tasq/templates/planner_prompt_tasq.txt)
+- Decomposition guide: [docs/planner_decomposition_guide.md](/path/to//tasq/docs/planner_decomposition_guide.md)
+- Review checklist: [docs/planner_review_checklist.md](/path/to//tasq/docs/planner_review_checklist.md)
+- Agent code project example: [docs/planner_example_agent_code_project.md](/path/to//tasq/docs/planner_example_agent_code_project.md)
+- Worker spec sample: [examples/workers.sample.json](/path/to//tasq/examples/workers.sample.json)
+- Worker spec schema: [schemas/workers.schema.json](/path/to//tasq/schemas/workers.schema.json)
+- Agent execution demo: [docs/demo_agent_git_execution.md](/path/to//tasq/docs/demo_agent_git_execution.md)
+- Manual planning demo: [docs/demo_manual_plan_only.md](/path/to//tasq/docs/demo_manual_plan_only.md)
 
 ```text
 You are a planning agent working with TasQ via MCP tools.
@@ -320,10 +320,10 @@ codex mcp add tasq-http --url http://localhost:8091/mcp
 ```
 3. Open a fresh Codex session in this repository.
 ```bash
-cd /Users/jung-yeon-woo/Development/Projects/tasq
+cd /path/to//tasq
 codex
 ```
-4. Paste the planner prompt from [docs/demo_manual_plan_only.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_manual_plan_only.md).
+4. Paste the planner prompt from [docs/demo_manual_plan_only.md](/path/to//tasq/docs/demo_manual_plan_only.md).
 5. Wait for the planner to create the project and print the numeric `project_id`.
 6. Open the web UI at [http://localhost:5173](http://localhost:5173) and inspect the new project.
 7. Manage the plan manually in the UI:
@@ -337,7 +337,7 @@ Expected behavior:
 - worker claims and the spawner are intentionally blocked
 
 ## Manual planning demo
-If you want planner-generated structure without worker execution, use [docs/demo_manual_plan_only.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_manual_plan_only.md).
+If you want planner-generated structure without worker execution, use [docs/demo_manual_plan_only.md](/path/to//tasq/docs/demo_manual_plan_only.md).
 
 ## Run the agent + Git demo
 Use this flow when you want TasQ to manage both planning and agent execution for a code project.
@@ -360,7 +360,7 @@ codex mcp add tasq-http --url http://localhost:8091/mcp
 cd /absolute/path/to/your/workspace
 codex
 ```
-4. Paste the planner prompt from [docs/demo_agent_git_execution.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_agent_git_execution.md).
+4. Paste the planner prompt from [docs/demo_agent_git_execution.md](/path/to//tasq/docs/demo_agent_git_execution.md).
 5. Wait for the planner to:
    - create the project
    - print the numeric `project_id`
@@ -372,7 +372,7 @@ codex
    - change `plan_state` from `draft` to `approved`
 8. Start workers.
 ```bash
-cd /Users/jung-yeon-woo/Development/Projects/tasq
+cd /path/to//tasq
 ./scripts/spawn_workers.sh --spec-file /absolute/path/to/your/workspace/workers.json
 ```
 9. Observe execution in the web UI:

@@ -130,7 +130,7 @@ SSE 이벤트 타입:
 ```
 
 만약 planner가 `workers.json`을 만들지 못했다면, 아래 샘플을 수동 부트스트랩 용도로 사용할 수 있습니다.
-- [examples/workers.sample.json](/Users/jung-yeon-woo/Development/Projects/tasq/examples/workers.sample.json)
+- [examples/workers.sample.json](/path/to//tasq/examples/workers.sample.json)
 
 스포너 동작:
 - worker spec마다 `codex exec` 워커 세션 1개씩 실행
@@ -179,14 +179,14 @@ TasQ는 project 레벨에서 계획 검토와 agent 실행을 분리한다.
 ### 1) 플래너 프롬프트
 `tasq-http` MCP를 등록한 뒤 새 Codex CLI 세션에서 아래를 그대로 붙여 넣으면 됩니다.
 
-- 템플릿 파일: [templates/planner_prompt_tasq.txt](/Users/jung-yeon-woo/Development/Projects/tasq/templates/planner_prompt_tasq.txt)
-- 분해 가이드: [docs/planner_decomposition_guide.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/planner_decomposition_guide.md)
-- 리뷰 체크리스트: [docs/planner_review_checklist.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/planner_review_checklist.md)
-- 에이전트 코드 프로젝트 예시: [docs/planner_example_agent_code_project.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/planner_example_agent_code_project.md)
-- 워커 스펙 샘플: [examples/workers.sample.json](/Users/jung-yeon-woo/Development/Projects/tasq/examples/workers.sample.json)
-- 워커 스펙 스키마: [schemas/workers.schema.json](/Users/jung-yeon-woo/Development/Projects/tasq/schemas/workers.schema.json)
-- 에이전트 실행 데모: [docs/demo_agent_git_execution.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_agent_git_execution.md)
-- 수동 플랜 데모: [docs/demo_manual_plan_only.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_manual_plan_only.md)
+- 템플릿 파일: [templates/planner_prompt_tasq.txt](/path/to//tasq/templates/planner_prompt_tasq.txt)
+- 분해 가이드: [docs/planner_decomposition_guide.md](/path/to//tasq/docs/planner_decomposition_guide.md)
+- 리뷰 체크리스트: [docs/planner_review_checklist.md](/path/to//tasq/docs/planner_review_checklist.md)
+- 에이전트 코드 프로젝트 예시: [docs/planner_example_agent_code_project.md](/path/to//tasq/docs/planner_example_agent_code_project.md)
+- 워커 스펙 샘플: [examples/workers.sample.json](/path/to//tasq/examples/workers.sample.json)
+- 워커 스펙 스키마: [schemas/workers.schema.json](/path/to//tasq/schemas/workers.schema.json)
+- 에이전트 실행 데모: [docs/demo_agent_git_execution.md](/path/to//tasq/docs/demo_agent_git_execution.md)
+- 수동 플랜 데모: [docs/demo_manual_plan_only.md](/path/to//tasq/docs/demo_manual_plan_only.md)
 
 ```text
 You are a planning agent working with TasQ via MCP tools.
@@ -319,10 +319,10 @@ codex mcp add tasq-http --url http://localhost:8091/mcp
 ```
 3. 이 저장소에서 새 Codex 세션을 연다.
 ```bash
-cd /Users/jung-yeon-woo/Development/Projects/tasq
+cd /path/to//tasq
 codex
 ```
-4. [docs/demo_manual_plan_only.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_manual_plan_only.md)에 있는 planner 프롬프트를 그대로 붙여 넣는다.
+4. [docs/demo_manual_plan_only.md](/path/to//tasq/docs/demo_manual_plan_only.md)에 있는 planner 프롬프트를 그대로 붙여 넣는다.
 5. planner가 project를 만들고 numeric `project_id`를 출력할 때까지 기다린다.
 6. 웹 UI [http://localhost:5173](http://localhost:5173) 에서 생성된 project를 확인한다.
 7. 이후에는 웹 UI에서 직접 관리한다.
@@ -336,7 +336,7 @@ codex
 - worker claim과 spawner 실행은 막힌다
 
 ## 수동 플랜 데모
-worker 없이 planner가 만든 구조만 쓰고 싶다면 [docs/demo_manual_plan_only.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_manual_plan_only.md)를 참고해.
+worker 없이 planner가 만든 구조만 쓰고 싶다면 [docs/demo_manual_plan_only.md](/path/to//tasq/docs/demo_manual_plan_only.md)를 참고해.
 
 ## 에이전트 + Git 데모 실행 방법
 planner가 project와 tree를 만들고, 승인 후 worker가 실제 코드 작업까지 수행하는 흐름이다.
@@ -359,7 +359,7 @@ codex mcp add tasq-http --url http://localhost:8091/mcp
 cd /absolute/path/to/your/workspace
 codex
 ```
-4. [docs/demo_agent_git_execution.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_agent_git_execution.md)의 planner 프롬프트를 그대로 붙여 넣는다.
+4. [docs/demo_agent_git_execution.md](/path/to//tasq/docs/demo_agent_git_execution.md)의 planner 프롬프트를 그대로 붙여 넣는다.
 5. planner가 다음을 끝낼 때까지 기다린다.
    - project 생성
    - numeric `project_id` 출력
@@ -370,7 +370,7 @@ codex
    - `plan_state`를 `draft`에서 `approved`로 변경
 7. worker를 시작한다.
 ```bash
-cd /Users/jung-yeon-woo/Development/Projects/tasq
+cd /path/to//tasq
 ./scripts/spawn_workers.sh --spec-file /absolute/path/to/your/workspace/workers.json
 ```
 8. 웹 UI에서 실행 상태를 관찰한다.
