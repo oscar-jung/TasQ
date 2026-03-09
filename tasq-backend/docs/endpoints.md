@@ -114,3 +114,7 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
 - Topology writes use project advisory lock via `lockProjectTopology`.
 - Claim lease defaults to 120 seconds when omitted.
 - Claim lifecycle now returns and accepts `claim_token` for heartbeat/release/complete/fail validation.
+- Auth/RBAC:
+  - `AUTH_MODE`: `off`, `optional`, `required`
+  - `AUTH_TOKENS`: token JSON with `actor_type`, `actor_id`, `scopes`, and project scopes
+  - `task:admin` flows require `human` actor.

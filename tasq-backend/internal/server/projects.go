@@ -78,11 +78,15 @@ func (s *server) listProjects(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	out := make([]project, 0)
+	actor := actorFromContext(r.Context())
 	for rows.Next() {
 		var p project
 		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.CreatedAt); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		if !actor.allowsProject(p.ID) {
+			continue
 		}
 		out = append(out, p)
 	}

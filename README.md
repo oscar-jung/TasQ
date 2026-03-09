@@ -58,3 +58,7 @@ docker compose up --build
 ## Next implementation targets
 - Agent capability-based claim filters
 - Dependency graph visualization
+
+## Auth (backend)
+- `AUTH_MODE`: `off` (default), `optional`, `required`
+- `AUTH_TOKENS`: JSON array token map with actor/scopes/project scopes

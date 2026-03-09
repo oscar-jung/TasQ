@@ -299,7 +299,8 @@ func (s *server) updateTaskStatus(w http.ResponseWriter, r *http.Request, taskID
 		return
 	}
 
-	if err := logEvent(r.Context(), tx, taskID, "task.status.updated", "human", "local-user", map[string]any{
+	actorType, actorID := actorForEvent(r)
+	if err := logEvent(r.Context(), tx, taskID, "task.status.updated", actorType, actorID, map[string]any{
 		"from": currentStatus,
 		"to":   status,
 	}); err != nil {
@@ -389,7 +390,8 @@ func (s *server) linkTaskGitRef(w http.ResponseWriter, r *http.Request, taskID i
 		return
 	}
 
-	if err := logEvent(r.Context(), tx, taskID, "task.git.linked", "agent", "git-reporter", map[string]any{
+	actorType, actorID := actorForEvent(r)
+	if err := logEvent(r.Context(), tx, taskID, "task.git.linked", actorType, actorID, map[string]any{
 		"repo":        req.Repo,
 		"branch":      req.Branch,
 		"base_commit": req.BaseCommit,
@@ -623,6 +625,9 @@ func (s *server) reorderTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ProjectID == 0 {
 		http.Error(w, "project_id is required", http.StatusBadRequest)
+		return
+	}
+	if !s.requireProjectAccess(w, r, req.ProjectID, "task:admin", true) {
 		return
 	}
 	if len(req.OrderedTask) == 0 {

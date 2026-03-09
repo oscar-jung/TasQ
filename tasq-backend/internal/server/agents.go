@@ -28,6 +28,12 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "project_id and agent_id are required", http.StatusBadRequest)
 		return
 	}
+	if !s.requireProjectAccess(w, r, req.ProjectID, "task:claim", false) {
+		return
+	}
+	if !s.requireAgentIdentity(w, r, req.AgentID) {
+		return
+	}
 	if req.LeaseSeconds <= 0 {
 		req.LeaseSeconds = 120
 	}
@@ -180,6 +186,9 @@ func (s *server) heartbeatTaskClaim(w http.ResponseWriter, r *http.Request, task
 		http.Error(w, "agent_id is required", http.StatusBadRequest)
 		return
 	}
+	if !s.requireAgentIdentity(w, r, req.AgentID) {
+		return
+	}
 	if req.LeaseSeconds <= 0 {
 		req.LeaseSeconds = 120
 	}
@@ -241,6 +250,9 @@ func (s *server) releaseTaskClaim(w http.ResponseWriter, r *http.Request, taskID
 	}
 	if strings.TrimSpace(req.AgentID) == "" {
 		http.Error(w, "agent_id is required", http.StatusBadRequest)
+		return
+	}
+	if !s.requireAgentIdentity(w, r, req.AgentID) {
 		return
 	}
 	if req.ToStatus == "" {
@@ -324,6 +336,9 @@ func (s *server) completeTask(w http.ResponseWriter, r *http.Request, taskID int
 	}
 	if strings.TrimSpace(req.AgentID) == "" {
 		http.Error(w, "agent_id is required", http.StatusBadRequest)
+		return
+	}
+	if !s.requireAgentIdentity(w, r, req.AgentID) {
 		return
 	}
 	resultPayload, err := parseRequiredResultPayload(req.ResultJSON)
@@ -414,6 +429,9 @@ func (s *server) failTask(w http.ResponseWriter, r *http.Request, taskID int64) 
 	}
 	if strings.TrimSpace(req.AgentID) == "" {
 		http.Error(w, "agent_id is required", http.StatusBadRequest)
+		return
+	}
+	if !s.requireAgentIdentity(w, r, req.AgentID) {
 		return
 	}
 	resultPayload, err := parseRequiredResultPayload(req.ResultJSON)

@@ -34,4 +34,11 @@
 - Claim lease defaults to `120s` when omitted.
 - `complete`/`fail` expect structured `result_payload` JSON with required keys:
   `summary`, `changes`, `paths`, `commands`, `tests`, `artifacts`, `next_risks`.
+- Auth is configurable via:
+  - `AUTH_MODE`: `off` (default), `optional`, `required`
+  - `AUTH_TOKENS`: JSON array of token configs:
+    `[{\"token\":\"...\",\"actor_type\":\"human|agent\",\"actor_id\":\"...\",\"scopes\":[...],\"projects\":[\"*\"|\"1\"|...]}]`
+- Scope model:
+  - `project:read`, `task:claim`, `task:update`, `task:complete`, `task:admin`
+- In `task:admin` flows, human actor is required by default.
 - Topology-changing operations (`create task`, `add/remove dependency`, `move`, `reorder`) use project-scoped advisory transaction locks.

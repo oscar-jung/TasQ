@@ -14,6 +14,7 @@ import (
 type server struct {
 	db            *sql.DB
 	treeGuardMode string
+	auth          *authStore
 }
 
 type project struct {
@@ -201,7 +202,14 @@ func Run() error {
 		treeGuardMode = "off"
 	}
 
-	s := &server{db: db, treeGuardMode: treeGuardMode}
+	authMode := getenv("AUTH_MODE", "off")
+	authTokens := getenv("AUTH_TOKENS", "")
+	auth, err := loadAuthStore(authMode, authTokens)
+	if err != nil {
+		return err
+	}
+
+	s := &server{db: db, treeGuardMode: treeGuardMode, auth: auth}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.healthz)
 	mux.HandleFunc("/projects", s.projects)
@@ -210,7 +218,7 @@ func Run() error {
 	mux.HandleFunc("/tasks/", s.tasksSubrouter)
 	mux.HandleFunc("/agents/claim-next", s.claimNext)
 
-	h := withJSON(withCORS(mux))
+	h := withAuth(auth, withJSON(withCORS(mux)))
 	log.Printf("tasq-backend listening on :%s", port)
 	if err := http.ListenAndServe(":"+port, h); err != nil {
 		return err
@@ -227,8 +235,14 @@ func (s *server) healthz(w http.ResponseWriter, _ *http.Request) {
 func (s *server) projects(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
+		if !s.requireScope(w, r, "project:read") {
+			return
+		}
 		s.listProjects(w, r)
 	case http.MethodPost:
+		if !s.requireScope(w, r, "task:admin") {
+			return
+		}
 		s.createProject(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -251,6 +265,9 @@ func (s *server) projectsSubrouter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 1 && r.Method == http.MethodPatch {
+		if !s.requireProjectAccess(w, r, projectID, "task:admin", true) {
+			return
+		}
 		s.updateProject(w, r, projectID)
 		return
 	}
@@ -261,18 +278,30 @@ func (s *server) projectsSubrouter(w http.ResponseWriter, r *http.Request) {
 
 	if parts[1] == "tasks" {
 		if len(parts) == 2 && r.Method == http.MethodPost {
+			if !s.requireProjectAccess(w, r, projectID, "task:admin", true) {
+				return
+			}
 			s.createTask(w, r, projectID)
 			return
 		}
 		if len(parts) == 2 && r.Method == http.MethodGet {
+			if !s.requireProjectAccess(w, r, projectID, "project:read", false) {
+				return
+			}
 			s.listProjectTasks(w, r, projectID)
 			return
 		}
 		if len(parts) == 3 && parts[2] == "tree" && r.Method == http.MethodGet {
+			if !s.requireProjectAccess(w, r, projectID, "project:read", false) {
+				return
+			}
 			s.getProjectTaskTree(w, r, projectID)
 			return
 		}
 		if len(parts) == 3 && parts[2] == "validate" && r.Method == http.MethodPost {
+			if !s.requireProjectAccess(w, r, projectID, "task:admin", true) {
+				return
+			}
 			s.validateProjectTree(w, r, projectID)
 			return
 		}
@@ -300,15 +329,24 @@ func (s *server) tasksSubrouter(w http.ResponseWriter, r *http.Request) {
 	case "dependencies":
 		if len(parts) == 2 {
 			if r.Method == http.MethodPost {
+				if _, ok := s.requireTaskAccess(w, r, taskID, "task:admin", true); !ok {
+					return
+				}
 				s.addDependency(w, r, taskID)
 				return
 			}
 			if r.Method == http.MethodGet {
+				if _, ok := s.requireTaskAccess(w, r, taskID, "project:read", false); !ok {
+					return
+				}
 				s.listDependencies(w, r, taskID)
 				return
 			}
 		}
 		if len(parts) == 3 && r.Method == http.MethodDelete {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "task:admin", true); !ok {
+				return
+			}
 			predecessorID, parseErr := strconv.ParseInt(parts[2], 10, 64)
 			if parseErr != nil {
 				http.Error(w, "invalid predecessor id", http.StatusBadRequest)
@@ -319,56 +357,89 @@ func (s *server) tasksSubrouter(w http.ResponseWriter, r *http.Request) {
 		}
 	case "status":
 		if r.Method == http.MethodPatch {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "task:update", false); !ok {
+				return
+			}
 			s.updateTaskStatus(w, r, taskID)
 			return
 		}
 	case "context":
 		if r.Method == http.MethodGet {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "project:read", false); !ok {
+				return
+			}
 			s.getTaskContext(w, r, taskID)
 			return
 		}
 	case "heartbeat":
 		if r.Method == http.MethodPost {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "task:claim", false); !ok {
+				return
+			}
 			s.heartbeatTaskClaim(w, r, taskID)
 			return
 		}
 	case "release":
 		if r.Method == http.MethodPost {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "task:claim", false); !ok {
+				return
+			}
 			s.releaseTaskClaim(w, r, taskID)
 			return
 		}
 	case "complete":
 		if r.Method == http.MethodPost {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "task:complete", false); !ok {
+				return
+			}
 			s.completeTask(w, r, taskID)
 			return
 		}
 	case "fail":
 		if r.Method == http.MethodPost {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "task:complete", false); !ok {
+				return
+			}
 			s.failTask(w, r, taskID)
 			return
 		}
 	case "move":
 		if r.Method == http.MethodPost {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "task:admin", true); !ok {
+				return
+			}
 			s.moveTask(w, r, taskID)
 			return
 		}
 	case "content":
 		if r.Method == http.MethodPatch {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "task:update", false); !ok {
+				return
+			}
 			s.updateTaskContent(w, r, taskID)
 			return
 		}
 	case "delete":
 		if r.Method == http.MethodPost {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "task:admin", true); !ok {
+				return
+			}
 			s.deleteTask(w, r, taskID)
 			return
 		}
 	case "execution-policy":
 		if r.Method == http.MethodPatch {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "task:admin", true); !ok {
+				return
+			}
 			s.updateTaskExecutionPolicy(w, r, taskID)
 			return
 		}
 	case "git-link":
 		if r.Method == http.MethodPost {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "task:update", false); !ok {
+				return
+			}
 			s.linkTaskGitRef(w, r, taskID)
 			return
 		}
