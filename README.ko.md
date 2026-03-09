@@ -126,9 +126,11 @@ SSE 이벤트 타입:
 플래너 세션은 worker spawn spec JSON 파일을 만들고, 이후 아래 스크립트를 실행하면 됩니다.
 
 ```bash
-cp ./examples/workers.sample.json /abs/path/to/workers.json
 ./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
 ```
+
+만약 planner가 `workers.json`을 만들지 못했다면, 아래 샘플을 수동 부트스트랩 용도로 사용할 수 있습니다.
+- [examples/workers.sample.json](/Users/jung-yeon-woo/Development/Projects/tasq/examples/workers.sample.json)
 
 스포너 동작:
 - worker spec마다 `codex exec` 워커 세션 1개씩 실행
@@ -238,6 +240,12 @@ worker 시작 전에는:
 - `execution_mode`가 agent 모드인지 확인해
 
 ### 2) 워커 자동 실행
+기본 경로:
+```bash
+./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
+```
+
+planner가 `workers.json`을 만들지 못한 경우의 대체 경로:
 ```bash
 cp ./examples/workers.sample.json /abs/path/to/workers.json
 # 먼저 workers.json의 project_id와 workspace를 수정

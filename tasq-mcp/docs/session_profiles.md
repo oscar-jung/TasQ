@@ -123,6 +123,8 @@ Then launch:
 ./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
 ```
 
+`examples/workers.sample.json` is only a manual fallback when the planner session did not generate `workers.json`.
+
 Supervisor stop rules:
 - queue drained: exit success
 - exhausted tasks (`max_attempts` reached): stop immediately and require human intervention

@@ -127,9 +127,11 @@ Design note:
 Planner sessions should emit a worker spawn spec JSON file and then launch:
 
 ```bash
-cp ./examples/workers.sample.json /abs/path/to/workers.json
 ./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
 ```
+
+If the planner did not generate `workers.json`, you can bootstrap one manually from:
+- [examples/workers.sample.json](/Users/jung-yeon-woo/Development/Projects/tasq/examples/workers.sample.json)
 
 Spawner behavior:
 - starts one `codex exec` worker session per worker spec
@@ -239,6 +241,12 @@ Before starting workers:
 - keep `execution_mode` in an agent mode
 
 ### 2) Start workers automatically
+Preferred path:
+```bash
+./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
+```
+
+Fallback path if the planner did not create `workers.json`:
 ```bash
 cp ./examples/workers.sample.json /abs/path/to/workers.json
 # edit project_id and workspace in workers.json first

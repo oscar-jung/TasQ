@@ -48,6 +48,8 @@ Worker execution:
 ./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
 ```
 
+Use `examples/workers.sample.json` only if the planner failed to generate `workers.json`.
+
 Expected behavior:
 - spawner refuses to start while `plan_state` is still `draft`
 - spawner refuses to start if `execution_mode` stays `manual`
