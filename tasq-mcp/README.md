@@ -35,3 +35,8 @@ go run ./cmd/server
 ```
 
 Logs are written to stderr.
+
+## Smoke test
+```bash
+./scripts/mcp_runtime_smoke.sh
+```

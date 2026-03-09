@@ -59,3 +59,15 @@ cat tasq_backup.sql | docker compose exec -T db psql -U tasq -d tasq
 - claim latency (claim -> complete)
 - failure rate by project / agent
 - stale active claims
+
+## MCP Runtime Smoke
+Validate MCP tool routing without launching external agent sessions:
+
+```bash
+./scripts/mcp_runtime_smoke.sh
+```
+
+This covers:
+- claim -> context -> heartbeat -> complete path
+- fail path
+- runtime alerts read path (including admin-token fallback)

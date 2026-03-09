@@ -84,6 +84,7 @@ PROJECT_ID=1 ACTION=release ./scripts/agent_worker_demo.sh
 ./scripts/topology_move_reorder_smoke.sh
 ./scripts/lease_reclaim_smoke.sh
 ./scripts/capability_claim_smoke.sh
+./scripts/mcp_runtime_smoke.sh
 ./scripts/final_regression_suite.sh
 ```
 

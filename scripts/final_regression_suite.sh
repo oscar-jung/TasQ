@@ -23,5 +23,7 @@ echo "[suite] capability_claim_smoke"
 echo "[suite] agent_worker_demo (complete)"
 PROJECT_ID="${PROJECT_ID:-1}" ACTION=complete ./scripts/agent_worker_demo.sh
 
-echo "[suite] PASS"
+echo "[suite] mcp_runtime_smoke"
+./scripts/mcp_runtime_smoke.sh
 
+echo "[suite] PASS"
