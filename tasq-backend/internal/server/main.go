@@ -175,6 +175,17 @@ type taskGitRefSummary struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+type taskEventSummary struct {
+	ID        int64           `json:"id"`
+	TaskID    int64           `json:"task_id"`
+	ProjectID int64           `json:"project_id"`
+	EventType string          `json:"event_type"`
+	ActorType string          `json:"actor_type"`
+	ActorID   string          `json:"actor_id"`
+	Payload   json.RawMessage `json:"payload"`
+	CreatedAt time.Time       `json:"created_at"`
+}
+
 // Run starts the HTTP server and wires shared middleware and routes.
 func Run() error {
 	dbURL := getenv("DATABASE_URL", "postgres://tasq:tasq@db:5432/tasq?sslmode=disable")
@@ -306,6 +317,13 @@ func (s *server) projectsSubrouter(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if len(parts) == 2 && parts[1] == "events" && r.Method == http.MethodGet {
+		if !s.requireProjectAccess(w, r, projectID, "project:read", false) {
+			return
+		}
+		s.listProjectEvents(w, r, projectID)
+		return
+	}
 
 	http.NotFound(w, r)
 }
@@ -369,6 +387,14 @@ func (s *server) tasksSubrouter(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.getTaskContext(w, r, taskID)
+			return
+		}
+	case "events":
+		if r.Method == http.MethodGet {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "project:read", false); !ok {
+				return
+			}
+			s.listTaskEvents(w, r, taskID)
 			return
 		}
 	case "heartbeat":

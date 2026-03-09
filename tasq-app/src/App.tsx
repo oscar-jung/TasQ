@@ -50,6 +50,28 @@ type TaskContextResponse = {
   git_refs: TaskGitRefSummary[]
 }
 
+type TaskEventSummary = {
+  id: number
+  task_id: number
+  project_id: number
+  event_type: string
+  actor_type: string
+  actor_id: string
+  payload: Record<string, unknown>
+  created_at: string
+}
+
+type TaskEventsResponse = {
+  task_id: number
+  project_id: number
+  events: TaskEventSummary[]
+}
+
+type ProjectEventsResponse = {
+  project_id: number
+  events: TaskEventSummary[]
+}
+
 type ClaimNextResponse = {
   task: TaskNode | null
   claim?: {
@@ -103,6 +125,12 @@ export function App() {
   const [taskContext, setTaskContext] = useState<TaskContextResponse | null>(null)
   const [taskContextError, setTaskContextError] = useState('')
   const [isLoadingTaskContext, setIsLoadingTaskContext] = useState(false)
+  const [taskEvents, setTaskEvents] = useState<TaskEventSummary[]>([])
+  const [projectEvents, setProjectEvents] = useState<TaskEventSummary[]>([])
+  const [isLoadingTaskEvents, setIsLoadingTaskEvents] = useState(false)
+  const [isLoadingProjectEvents, setIsLoadingProjectEvents] = useState(false)
+  const [taskEventsError, setTaskEventsError] = useState('')
+  const [projectEventsError, setProjectEventsError] = useState('')
   const [maxAttemptsDraft, setMaxAttemptsDraft] = useState('1')
   const [gitRepoDraft, setGitRepoDraft] = useState('')
   const [gitBranchDraft, setGitBranchDraft] = useState('')
@@ -169,6 +197,21 @@ export function App() {
     [selectedTaskID, taskByID]
   )
 
+  function formatEventTime(iso: string) {
+    const date = new Date(iso)
+    if (Number.isNaN(date.getTime())) return iso
+    return date.toLocaleString()
+  }
+
+  function formatPayload(payload: Record<string, unknown>) {
+    const entries = Object.entries(payload ?? {})
+    if (entries.length === 0) return '-'
+    return entries
+      .slice(0, 3)
+      .map(([k, v]) => `${k}: ${String(v)}`)
+      .join(' | ')
+  }
+
   useEffect(() => {
     void fetchProjects()
   }, [])
@@ -216,6 +259,10 @@ export function App() {
       setTaskMessage('')
       setTaskContext(null)
       setTaskContextError('')
+      setTaskEvents([])
+      setTaskEventsError('')
+      setProjectEvents([])
+      setProjectEventsError('')
       setMaxAttemptsDraft('1')
       setGitRepoDraft('')
       setGitBranchDraft('')
@@ -290,6 +337,70 @@ export function App() {
       }
     }
 
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedTaskID])
+
+  useEffect(() => {
+    if (!selectedProjectID) {
+      setProjectEvents([])
+      setProjectEventsError('')
+      setIsLoadingProjectEvents(false)
+      return
+    }
+    let cancelled = false
+    const run = async () => {
+      setIsLoadingProjectEvents(true)
+      setProjectEventsError('')
+      try {
+        const data = await fetchProjectEvents(selectedProjectID)
+        if (cancelled) return
+        setProjectEvents(data.events)
+      } catch (err) {
+        if (cancelled) return
+        const message = err instanceof Error ? err.message : 'failed to load project events'
+        setProjectEventsError(message)
+        setProjectEvents([])
+      } finally {
+        if (!cancelled) {
+          setIsLoadingProjectEvents(false)
+        }
+      }
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedProjectID])
+
+  useEffect(() => {
+    if (!selectedTaskID) {
+      setTaskEvents([])
+      setTaskEventsError('')
+      setIsLoadingTaskEvents(false)
+      return
+    }
+    let cancelled = false
+    const run = async () => {
+      setIsLoadingTaskEvents(true)
+      setTaskEventsError('')
+      try {
+        const data = await fetchTaskEvents(selectedTaskID)
+        if (cancelled) return
+        setTaskEvents(data.events)
+      } catch (err) {
+        if (cancelled) return
+        const message = err instanceof Error ? err.message : 'failed to load task events'
+        setTaskEventsError(message)
+        setTaskEvents([])
+      } finally {
+        if (!cancelled) {
+          setIsLoadingTaskEvents(false)
+        }
+      }
+    }
     void run()
     return () => {
       cancelled = true
@@ -380,6 +491,33 @@ export function App() {
     return {
       recent_runs: Array.isArray(raw.recent_runs) ? raw.recent_runs : [],
       git_refs: Array.isArray(raw.git_refs) ? raw.git_refs : []
+    }
+  }
+
+  async function fetchTaskEvents(taskID: number) {
+    const res = await fetch(`${apiBase}/tasks/${taskID}/events?limit=30`)
+    if (!res.ok) {
+      const message = await res.text()
+      throw new Error(message || 'failed to fetch task events')
+    }
+    const raw = (await res.json()) as TaskEventsResponse
+    return {
+      task_id: raw.task_id,
+      project_id: raw.project_id,
+      events: Array.isArray(raw.events) ? raw.events : []
+    }
+  }
+
+  async function fetchProjectEvents(projectID: number) {
+    const res = await fetch(`${apiBase}/projects/${projectID}/events?limit=30`)
+    if (!res.ok) {
+      const message = await res.text()
+      throw new Error(message || 'failed to fetch project events')
+    }
+    const raw = (await res.json()) as ProjectEventsResponse
+    return {
+      project_id: raw.project_id,
+      events: Array.isArray(raw.events) ? raw.events : []
     }
   }
 
@@ -478,6 +616,14 @@ export function App() {
     if (selectedProjectID) {
       await fetchTaskTree(selectedProjectID)
     }
+    const [taskEventData, projectEventData] = await Promise.all([
+      fetchTaskEvents(taskID),
+      selectedProjectID ? fetchProjectEvents(selectedProjectID) : Promise.resolve({ project_id: 0, events: [] })
+    ])
+    setTaskEvents(taskEventData.events)
+    if (selectedProjectID) {
+      setProjectEvents(projectEventData.events)
+    }
   }
 
   async function patchExecutionPolicy(taskID: number, maxAttempts: number) {
@@ -493,8 +639,16 @@ export function App() {
     if (selectedProjectID) {
       await fetchTaskTree(selectedProjectID)
     }
-    const ctx = await fetchTaskContext(taskID)
+    const [ctx, taskEventData, projectEventData] = await Promise.all([
+      fetchTaskContext(taskID),
+      fetchTaskEvents(taskID),
+      selectedProjectID ? fetchProjectEvents(selectedProjectID) : Promise.resolve({ project_id: 0, events: [] })
+    ])
     setTaskContext(ctx)
+    setTaskEvents(taskEventData.events)
+    if (selectedProjectID) {
+      setProjectEvents(projectEventData.events)
+    }
   }
 
   async function linkTaskGitRef(
@@ -510,8 +664,29 @@ export function App() {
       const message = await res.text()
       throw new Error(message || 'failed to link git ref')
     }
-    const ctx = await fetchTaskContext(taskID)
+    const [ctx, taskEventData, projectEventData] = await Promise.all([
+      fetchTaskContext(taskID),
+      fetchTaskEvents(taskID),
+      selectedProjectID ? fetchProjectEvents(selectedProjectID) : Promise.resolve({ project_id: 0, events: [] })
+    ])
     setTaskContext(ctx)
+    setTaskEvents(taskEventData.events)
+    if (selectedProjectID) {
+      setProjectEvents(projectEventData.events)
+    }
+  }
+
+  async function refreshObservability(taskID: number, projectID: number | null) {
+    const [ctx, taskEventData, projectEventData] = await Promise.all([
+      fetchTaskContext(taskID),
+      fetchTaskEvents(taskID),
+      projectID ? fetchProjectEvents(projectID) : Promise.resolve({ project_id: 0, events: [] })
+    ])
+    setTaskContext(ctx)
+    setTaskEvents(taskEventData.events)
+    if (projectID) {
+      setProjectEvents(projectEventData.events)
+    }
   }
 
   function buildDefaultResultPayload() {
@@ -837,8 +1012,7 @@ export function App() {
       }
       setSelectedTaskID(data.task.id)
       await fetchTaskTree(selectedProjectID)
-      const ctx = await fetchTaskContext(data.task.id)
-      setTaskContext(ctx)
+      await refreshObservability(data.task.id, selectedProjectID)
       setTaskMessage(`Claimed task #${data.task.id}.`)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'failed to claim next task'
@@ -873,6 +1047,12 @@ export function App() {
         const message = await res.text()
         throw new Error(message || 'failed to heartbeat claim')
       }
+      const taskEventData = await fetchTaskEvents(selectedTask.id)
+      setTaskEvents(taskEventData.events)
+      if (selectedProjectID) {
+        const projectEventData = await fetchProjectEvents(selectedProjectID)
+        setProjectEvents(projectEventData.events)
+      }
       setTaskMessage('Heartbeat sent.')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'failed to heartbeat claim'
@@ -905,8 +1085,7 @@ export function App() {
       if (selectedProjectID) {
         await fetchTaskTree(selectedProjectID)
       }
-      const ctx = await fetchTaskContext(selectedTask.id)
-      setTaskContext(ctx)
+      await refreshObservability(selectedTask.id, selectedProjectID)
       setTaskMessage('Claim released to planned.')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'failed to release claim'
@@ -944,8 +1123,7 @@ export function App() {
       if (selectedProjectID) {
         await fetchTaskTree(selectedProjectID)
       }
-      const ctx = await fetchTaskContext(selectedTask.id)
-      setTaskContext(ctx)
+      await refreshObservability(selectedTask.id, selectedProjectID)
       setTaskMessage('Task completed by agent action.')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'failed to complete task'
@@ -984,8 +1162,7 @@ export function App() {
       if (selectedProjectID) {
         await fetchTaskTree(selectedProjectID)
       }
-      const ctx = await fetchTaskContext(selectedTask.id)
-      setTaskContext(ctx)
+      await refreshObservability(selectedTask.id, selectedProjectID)
       setTaskMessage('Task marked as failed by agent action.')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'failed to fail task'
@@ -1392,6 +1569,56 @@ export function App() {
                           ))}
                         </div>
                       )}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Task Events</p>
+                        {isLoadingTaskEvents && <p className="mt-1 text-xs text-muted-foreground">Loading task events...</p>}
+                        {taskEventsError && <p className="mt-1 text-xs text-red-300">{taskEventsError}</p>}
+                        {!isLoadingTaskEvents && !taskEventsError && taskEvents.length === 0 && (
+                          <p className="mt-1 text-xs text-muted-foreground">No task events yet.</p>
+                        )}
+                        {taskEvents.length > 0 && (
+                          <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
+                            {taskEvents.map((event) => (
+                              <div key={event.id} className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
+                                <p className="font-medium text-foreground/90">{event.event_type}</p>
+                                <p className="text-muted-foreground">
+                                  {event.actor_type}:{event.actor_id} · {formatEventTime(event.created_at)}
+                                </p>
+                                <p className="truncate text-muted-foreground">{formatPayload(event.payload ?? {})}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Project Events</p>
+                        {isLoadingProjectEvents && (
+                          <p className="mt-1 text-xs text-muted-foreground">Loading project events...</p>
+                        )}
+                        {projectEventsError && <p className="mt-1 text-xs text-red-300">{projectEventsError}</p>}
+                        {!isLoadingProjectEvents && !projectEventsError && projectEvents.length === 0 && (
+                          <p className="mt-1 text-xs text-muted-foreground">No project events yet.</p>
+                        )}
+                        {projectEvents.length > 0 && (
+                          <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
+                            {projectEvents.map((event) => (
+                              <div key={event.id} className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
+                                <p className="font-medium text-foreground/90">
+                                  T#{event.task_id} · {event.event_type}
+                                </p>
+                                <p className="text-muted-foreground">
+                                  {event.actor_type}:{event.actor_id} · {formatEventTime(event.created_at)}
+                                </p>
+                                <p className="truncate text-muted-foreground">{formatPayload(event.payload ?? {})}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}

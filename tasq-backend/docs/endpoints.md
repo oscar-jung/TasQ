@@ -37,6 +37,10 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
   - Handler: `(*server).validateProjectTree` in `internal/server/tree_guard.go`
   - Purpose: validate tree integrity and optionally cleanse invalid statuses.
 
+- `GET /projects/:project_id/events?limit=50`
+  - Handler: `(*server).listProjectEvents` in `internal/server/events.go`
+  - Purpose: list project-level audit timeline events (newest first).
+
 ## Task Dependencies
 - `POST /tasks/:task_id/dependencies`
   - Handler: `(*server).addDependency` in `internal/server/tasks.go`
@@ -78,6 +82,10 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
 - `GET /tasks/:task_id/context`
   - Handler: `(*server).getTaskContext` in `internal/server/agents.go`
   - Purpose: get task + dependencies + parent chain context.
+
+- `GET /tasks/:task_id/events?limit=50`
+  - Handler: `(*server).listTaskEvents` in `internal/server/events.go`
+  - Purpose: list task-level lifecycle/audit events (newest first).
 
 ## Agent Queue/Claims
 - `POST /agents/claim-next`
