@@ -39,6 +39,7 @@ type config struct {
 	APIBase    string
 	AgentToken string
 	AdminToken string
+	Debug      bool
 }
 
 type claimNextArgs struct {
@@ -139,13 +140,12 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
 	cfg := loadConfig()
-	log.Printf(
-		"tasq-mcp starting; api_base=%s agent_token=%t admin_token=%t",
-		cfg.APIBase, cfg.AgentToken != "", cfg.AdminToken != "",
-	)
+	debugf(cfg, "tasq-mcp starting; api_base=%s agent_token=%t admin_token=%t",
+		cfg.APIBase, cfg.AgentToken != "", cfg.AdminToken != "")
 
 	if err := serve(os.Stdin, os.Stdout, cfg); err != nil {
-		log.Fatalf("tasq-mcp fatal: %v", err)
+		debugf(cfg, "tasq-mcp fatal: %v", err)
+		os.Exit(1)
 	}
 }
 
@@ -154,6 +154,7 @@ func loadConfig() config {
 		APIBase:    getenv("TASQ_API_BASE", "http://localhost:8080"),
 		AgentToken: strings.TrimSpace(os.Getenv("TASQ_TOKEN_AGENT")),
 		AdminToken: strings.TrimSpace(os.Getenv("TASQ_TOKEN_ADMIN")),
+		Debug:      strings.EqualFold(strings.TrimSpace(os.Getenv("TASQ_MCP_DEBUG")), "1"),
 	}
 }
 
@@ -196,13 +197,24 @@ func serve(in io.Reader, out io.Writer, cfg config) error {
 func handleRequest(req rpcRequest, cfg config) rpcResponse {
 	switch req.Method {
 	case "initialize":
+		protocolVersion := "2024-11-05"
+		var initParams struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		}
+		if len(req.Params) > 0 {
+			_ = json.Unmarshal(req.Params, &initParams)
+			if strings.TrimSpace(initParams.ProtocolVersion) != "" {
+				protocolVersion = strings.TrimSpace(initParams.ProtocolVersion)
+			}
+		}
 		return rpcResponse{
 			Result: map[string]any{
-				"protocolVersion": "2024-11-05",
+				"protocolVersion": protocolVersion,
 				"capabilities": map[string]any{
 					"tools": map[string]any{
 						"listChanged": false,
 					},
+					"logging": map[string]any{},
 				},
 				"serverInfo": map[string]any{
 					"name":    "tasq-mcp",
@@ -702,9 +714,14 @@ func readMessage(r *bufio.Reader) ([]byte, error) {
 		if line == "" {
 			break
 		}
-		lower := strings.ToLower(line)
-		if strings.HasPrefix(lower, "content-length:") {
-			v := strings.TrimSpace(line[len("Content-Length:"):])
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		headerName := strings.ToLower(strings.TrimSpace(parts[0]))
+		headerValue := strings.TrimSpace(parts[1])
+		if headerName == "content-length" {
+			v := headerValue
 			n, err := strconv.Atoi(v)
 			if err != nil || n < 0 {
 				return nil, fmt.Errorf("invalid content-length header: %q", line)
@@ -871,4 +888,11 @@ func getenv(key, fallback string) string {
 		return fallback
 	}
 	return v
+}
+
+func debugf(cfg config, format string, args ...any) {
+	if !cfg.Debug {
+		return
+	}
+	log.Printf(format, args...)
 }
