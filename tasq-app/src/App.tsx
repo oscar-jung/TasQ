@@ -2230,7 +2230,7 @@ export function App() {
   }
 
   return (
-    <main className="mx-auto grid h-screen min-w-[1520px] w-full max-w-[1880px] grid-cols-[300px_minmax(760px,1fr)_420px] gap-4 px-6 py-4">
+    <main className="mx-auto grid h-screen min-w-[1680px] w-full max-w-[2160px] grid-cols-[360px_minmax(760px,1fr)_500px] gap-5 px-8 py-4">
       <Card className="h-full">
         <CardHeader>
           <CardTitle className="text-lg font-semibold tracking-tight">Projects</CardTitle>
@@ -2274,11 +2274,15 @@ export function App() {
                             <p className="truncate text-left text-[10px] uppercase tracking-[0.22em] text-muted-foreground/80">
                               Project #{project.id}
                             </p>
-                            {project.git_policy === 'required' && (
-                              <span className="rounded-full border border-emerald-500/50 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-emerald-200">
-                                git required
-                              </span>
-                            )}
+                            <span
+                              className={`rounded-full border px-1.5 py-0.5 text-[9px] uppercase tracking-wide ${
+                                project.git_policy === 'required'
+                                  ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200'
+                                  : 'border-border/70 bg-muted/30 text-muted-foreground'
+                              }`}
+                            >
+                              Git
+                            </span>
                             <span className="rounded-full border border-border/70 bg-muted/30 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-muted-foreground">
                               {project.execution_mode.replace('_', ' ')}
                             </span>
@@ -2307,48 +2311,52 @@ export function App() {
 
                     {isEditing && (
                       <>
-                        <div className="flex min-w-0 flex-1 items-center gap-2">
+                        <div className="flex min-w-0 flex-1 flex-col gap-2">
                           <Input
                             autoFocus
                             className="h-8 flex-1"
                             value={editingProjectName}
                             onChange={(e) => setEditingProjectName(e.target.value)}
                           />
-                          <select
-                            className="h-8 rounded-md border border-border bg-background px-2 text-xs"
-                            value={editingProjectGitPolicy}
-                            onChange={(e) => setEditingProjectGitPolicy(e.target.value as 'optional' | 'required')}
-                          >
-                            <option value="optional">git optional</option>
-                            <option value="required">git required</option>
-                          </select>
-                          <select
-                            className="h-8 rounded-md border border-border bg-background px-2 text-xs"
-                            value={editingProjectExecutionMode}
-                            onChange={(e) =>
-                              setEditingProjectExecutionMode(e.target.value as Project['execution_mode'])
-                            }
-                          >
-                            <option value="manual">manual</option>
-                            <option value="agent_assisted">agent assisted</option>
-                            <option value="agent_autonomous">agent autonomous</option>
-                          </select>
-                          <select
-                            className="h-8 rounded-md border border-border bg-background px-2 text-xs"
-                            value={editingProjectPlanState}
-                            onChange={(e) => setEditingProjectPlanState(e.target.value as Project['plan_state'])}
-                          >
-                            <option value="draft">draft</option>
-                            <option value="approved">approved</option>
-                            <option value="archived">archived</option>
-                          </select>
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                            <select
+                              className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                              value={editingProjectGitPolicy}
+                              onChange={(e) => setEditingProjectGitPolicy(e.target.value as 'optional' | 'required')}
+                            >
+                              <option value="optional">git optional</option>
+                              <option value="required">git required</option>
+                            </select>
+                            <select
+                              className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                              value={editingProjectExecutionMode}
+                              onChange={(e) =>
+                                setEditingProjectExecutionMode(e.target.value as Project['execution_mode'])
+                              }
+                            >
+                              <option value="manual">manual</option>
+                              <option value="agent_assisted">agent assisted</option>
+                              <option value="agent_autonomous">agent autonomous</option>
+                            </select>
+                            <select
+                              className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                              value={editingProjectPlanState}
+                              onChange={(e) => setEditingProjectPlanState(e.target.value as Project['plan_state'])}
+                            >
+                              <option value="draft">draft</option>
+                              <option value="approved">approved</option>
+                              <option value="archived">archived</option>
+                            </select>
+                          </div>
                         </div>
-                        <Button size="sm" variant="ghost" onClick={() => void saveProjectEdit(project.id)}>
-                          <Check className="h-4 w-4" />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={cancelProjectEdit}>
-                          <X className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-1 self-start sm:self-center">
+                          <Button size="sm" variant="ghost" onClick={() => void saveProjectEdit(project.id)}>
+                            <Check className="h-4 w-4" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={cancelProjectEdit}>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </>
                     )}
 
@@ -2396,8 +2404,14 @@ export function App() {
                 <span className="rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
                   ID {selectedProject.id}
                 </span>
-                <span className="rounded-full border border-emerald-500/50 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-emerald-200">
-                  Git {selectedProject.git_policy}
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${
+                    selectedProject.git_policy === 'required'
+                      ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200'
+                      : 'border-border/70 bg-muted/30 text-muted-foreground'
+                  }`}
+                >
+                  Git
                 </span>
                 <span className="rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
                   {selectedProject.execution_mode.replace('_', ' ')}
