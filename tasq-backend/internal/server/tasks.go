@@ -349,6 +349,65 @@ func (s *server) updateTaskExecutionPolicy(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// linkTaskGitRef handles POST /tasks/:task_id/git-link.
+func (s *server) linkTaskGitRef(w http.ResponseWriter, r *http.Request, taskID int64) {
+	var req linkTaskGitRefReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Repo) == "" ||
+		strings.TrimSpace(req.Branch) == "" ||
+		strings.TrimSpace(req.BaseCommit) == "" ||
+		strings.TrimSpace(req.CommitSHA) == "" {
+		http.Error(w, "repo, branch, base_commit, commit_sha are required", http.StatusBadRequest)
+		return
+	}
+
+	var projectID int64
+	if err := s.db.QueryRowContext(r.Context(), `SELECT project_id FROM tasks WHERE id = $1`, taskID).Scan(&projectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "task not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	tx, err := s.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(r.Context(), `
+		INSERT INTO task_git_refs(task_id, repo, branch, base_commit, commit_sha)
+		VALUES ($1, $2, $3, $4, $5)`,
+		taskID, req.Repo, req.Branch, req.BaseCommit, req.CommitSHA); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := logEvent(r.Context(), tx, taskID, "task.git.linked", "agent", "git-reporter", map[string]any{
+		"repo":        req.Repo,
+		"branch":      req.Branch,
+		"base_commit": req.BaseCommit,
+		"commit_sha":  req.CommitSHA,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	s.maybeRunTreeGuard(r.Context(), projectID)
+	writeJSON(w, http.StatusCreated, map[string]any{"ok": true})
+}
+
 // updateTaskContent handles PATCH /tasks/:task_id/content.
 func (s *server) updateTaskContent(w http.ResponseWriter, r *http.Request, taskID int64) {
 	var req updateTaskContentReq

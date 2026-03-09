@@ -95,10 +95,18 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
 - `POST /tasks/:task_id/complete`
   - Handler: `(*server).completeTask` in `internal/server/agents.go`
   - Purpose: complete claimed task and finalize result.
+  - Required body field: `result_payload` JSON object with keys
+    `summary`, `changes`, `paths`, `commands`, `tests`, `artifacts`, `next_risks`.
 
 - `POST /tasks/:task_id/fail`
   - Handler: `(*server).failTask` in `internal/server/agents.go`
   - Purpose: mark claimed task as failed and finalize run payload.
+  - Required body field: `result_payload` JSON object with keys
+    `summary`, `changes`, `paths`, `commands`, `tests`, `artifacts`, `next_risks`.
+
+- `POST /tasks/:task_id/git-link`
+  - Handler: `(*server).linkTaskGitRef` in `internal/server/tasks.go`
+  - Purpose: link git metadata (`repo`, `branch`, `base_commit`, `commit_sha`) to task history.
 
 ## Notes
 - Tree guard mode is controlled by env `TREE_GUARD_MODE`:

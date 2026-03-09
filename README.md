@@ -45,6 +45,7 @@ docker compose up --build
 - `POST /tasks/:id/release`
 - `POST /tasks/:id/complete`
 - `POST /tasks/:id/fail`
+- `POST /tasks/:id/git-link`
 - `GET /tasks/:id/context`
 
 ## Smoke tests

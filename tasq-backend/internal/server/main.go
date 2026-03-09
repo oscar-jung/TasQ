@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log"
 	"net/http"
 	"strconv"
@@ -99,16 +100,18 @@ type releaseReq struct {
 }
 
 type completeReq struct {
-	AgentID    string `json:"agent_id"`
-	ClaimToken string `json:"claim_token"`
-	ResultMD   string `json:"result_md"`
+	AgentID    string          `json:"agent_id"`
+	ClaimToken string          `json:"claim_token"`
+	ResultMD   string          `json:"result_md"`
+	ResultJSON json.RawMessage `json:"result_payload"`
 }
 
 type failReq struct {
-	AgentID    string `json:"agent_id"`
-	ClaimToken string `json:"claim_token"`
-	Reason     string `json:"reason"`
-	ResultMD   string `json:"result_md"`
+	AgentID    string          `json:"agent_id"`
+	ClaimToken string          `json:"claim_token"`
+	Reason     string          `json:"reason"`
+	ResultMD   string          `json:"result_md"`
+	ResultJSON json.RawMessage `json:"result_payload"`
 }
 
 type moveTaskReq struct {
@@ -130,6 +133,13 @@ type updateTaskExecutionPolicyReq struct {
 	MaxAttempts int `json:"max_attempts"`
 }
 
+type linkTaskGitRefReq struct {
+	Repo       string `json:"repo"`
+	Branch     string `json:"branch"`
+	BaseCommit string `json:"base_commit"`
+	CommitSHA  string `json:"commit_sha"`
+}
+
 type contextDependency struct {
 	TaskID    int64  `json:"task_id"`
 	Title     string `json:"title"`
@@ -141,6 +151,27 @@ type taskContext struct {
 	Task         task                `json:"task"`
 	Dependencies []contextDependency `json:"dependencies"`
 	ParentChain  []task              `json:"parent_chain"`
+	RecentRuns   []taskRunSummary    `json:"recent_runs"`
+	GitRefs      []taskGitRefSummary `json:"git_refs"`
+}
+
+type taskRunSummary struct {
+	ID         int64           `json:"id"`
+	AgentID    string          `json:"agent_id"`
+	AttemptNo  int             `json:"attempt_no"`
+	Status     string          `json:"status"`
+	StartedAt  time.Time       `json:"started_at"`
+	FinishedAt *time.Time      `json:"finished_at"`
+	ResultJSON json.RawMessage `json:"result_payload"`
+}
+
+type taskGitRefSummary struct {
+	ID         int64     `json:"id"`
+	Repo       string    `json:"repo"`
+	Branch     string    `json:"branch"`
+	BaseCommit string    `json:"base_commit"`
+	CommitSHA  string    `json:"commit_sha"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // Run starts the HTTP server and wires shared middleware and routes.
@@ -334,6 +365,11 @@ func (s *server) tasksSubrouter(w http.ResponseWriter, r *http.Request) {
 	case "execution-policy":
 		if r.Method == http.MethodPatch {
 			s.updateTaskExecutionPolicy(w, r, taskID)
+			return
+		}
+	case "git-link":
+		if r.Method == http.MethodPost {
+			s.linkTaskGitRef(w, r, taskID)
 			return
 		}
 	}

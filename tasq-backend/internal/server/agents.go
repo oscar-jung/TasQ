@@ -326,6 +326,11 @@ func (s *server) completeTask(w http.ResponseWriter, r *http.Request, taskID int
 		http.Error(w, "agent_id is required", http.StatusBadRequest)
 		return
 	}
+	resultPayload, err := parseRequiredResultPayload(req.ResultJSON)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	tx, err := s.db.BeginTx(r.Context(), nil)
 	if err != nil {
@@ -375,9 +380,7 @@ func (s *server) completeTask(w http.ResponseWriter, r *http.Request, taskID int
 		return
 	}
 
-	if err := finishLatestTaskRun(r.Context(), tx, taskID, req.AgentID, claim.AttemptNo, "completed", map[string]any{
-		"result_md": req.ResultMD,
-	}); err != nil {
+	if err := finishLatestTaskRun(r.Context(), tx, taskID, req.AgentID, claim.AttemptNo, "completed", resultPayload); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -413,6 +416,12 @@ func (s *server) failTask(w http.ResponseWriter, r *http.Request, taskID int64) 
 		http.Error(w, "agent_id is required", http.StatusBadRequest)
 		return
 	}
+	resultPayload, err := parseRequiredResultPayload(req.ResultJSON)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	resultPayload["reason"] = req.Reason
 
 	tx, err := s.db.BeginTx(r.Context(), nil)
 	if err != nil {
@@ -451,10 +460,7 @@ func (s *server) failTask(w http.ResponseWriter, r *http.Request, taskID int64) 
 		return
 	}
 
-	if err := finishLatestTaskRun(r.Context(), tx, taskID, req.AgentID, claim.AttemptNo, "failed", map[string]any{
-		"reason":    req.Reason,
-		"result_md": req.ResultMD,
-	}); err != nil {
+	if err := finishLatestTaskRun(r.Context(), tx, taskID, req.AgentID, claim.AttemptNo, "failed", resultPayload); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -547,6 +553,36 @@ func generateClaimToken() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
+func parseRequiredResultPayload(raw json.RawMessage) (map[string]any, error) {
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("result_payload is required")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("invalid result_payload json")
+	}
+
+	required := []string{
+		"summary",
+		"changes",
+		"paths",
+		"commands",
+		"tests",
+		"artifacts",
+		"next_risks",
+	}
+	for _, key := range required {
+		v, ok := payload[key]
+		if !ok {
+			return nil, fmt.Errorf("result_payload.%s is required", key)
+		}
+		if s, isString := v.(string); isString && strings.TrimSpace(s) == "" {
+			return nil, fmt.Errorf("result_payload.%s must not be empty", key)
+		}
+	}
+	return payload, nil
+}
+
 // getTaskContext handles GET /tasks/:task_id/context.
 func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID int64) {
 	var ctxOut taskContext
@@ -610,6 +646,46 @@ func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID i
 			return
 		}
 		ctxOut.ParentChain = append(ctxOut.ParentChain, p)
+	}
+
+	runRows, err := s.db.QueryContext(r.Context(), `
+		SELECT id, agent_id, attempt_no, status, started_at, finished_at, result_payload_json
+		FROM task_runs
+		WHERE task_id = $1
+		ORDER BY started_at DESC
+		LIMIT 10`, taskID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer runRows.Close()
+	for runRows.Next() {
+		var run taskRunSummary
+		if err := runRows.Scan(&run.ID, &run.AgentID, &run.AttemptNo, &run.Status, &run.StartedAt, &run.FinishedAt, &run.ResultJSON); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		ctxOut.RecentRuns = append(ctxOut.RecentRuns, run)
+	}
+
+	gitRows, err := s.db.QueryContext(r.Context(), `
+		SELECT id, repo, branch, base_commit, commit_sha, created_at
+		FROM task_git_refs
+		WHERE task_id = $1
+		ORDER BY created_at DESC
+		LIMIT 10`, taskID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer gitRows.Close()
+	for gitRows.Next() {
+		var ref taskGitRefSummary
+		if err := gitRows.Scan(&ref.ID, &ref.Repo, &ref.Branch, &ref.BaseCommit, &ref.CommitSHA, &ref.CreatedAt); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		ctxOut.GitRefs = append(ctxOut.GitRefs, ref)
 	}
 
 	writeJSON(w, http.StatusOK, ctxOut)

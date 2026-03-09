@@ -21,6 +21,7 @@
 - `POST /tasks/:id/release`
 - `POST /tasks/:id/complete`
 - `POST /tasks/:id/fail`
+- `POST /tasks/:id/git-link`
 - `GET /tasks/:id/context`
 
 ## Notes
@@ -31,4 +32,6 @@
 - Queue lease lifecycle supports `claim -> heartbeat -> complete|release`.
 - Queue lease lifecycle supports `claim -> heartbeat -> complete|release|fail`.
 - Claim lease defaults to `120s` when omitted.
+- `complete`/`fail` expect structured `result_payload` JSON with required keys:
+  `summary`, `changes`, `paths`, `commands`, `tests`, `artifacts`, `next_risks`.
 - Topology-changing operations (`create task`, `add/remove dependency`, `move`, `reorder`) use project-scoped advisory transaction locks.
