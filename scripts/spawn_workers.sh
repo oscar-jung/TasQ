@@ -96,6 +96,7 @@ mkdir -p "${LOG_DIR}"
 
 PIDS=()
 WORKER_LABELS=()
+WORKER_SPECS_JSON="$(jq -c '.workers' "${SPEC_FILE}")"
 
 print_runtime_summary() {
   local runtime_json="$1"
@@ -107,6 +108,74 @@ print_runtime_summary() {
   blocked="$(echo "${runtime_json}" | jq -r '.blocked_planned_tasks')"
   exhausted="$(echo "${runtime_json}" | jq -r '.exhausted_tasks | length')"
   echo "[runtime] total=${total} done=${done} unfinished=${unfinished} claimable=${claimable} blocked=${blocked} exhausted=${exhausted}"
+}
+
+worker_can_cover_caps() {
+  local required_caps_json="$1"
+  echo "${WORKER_SPECS_JSON}" | jq -e --argjson required "${required_caps_json}" '
+    any(.[]; (($required | length) == 0) or ($required - (.capabilities // [])) | length == 0)
+  ' >/dev/null
+}
+
+diagnose_blockage() {
+  local tasks_json
+  if ! tasks_json="$(curl -sS "${API_BASE}/projects/${PROJECT_ID}/tasks" 2>/dev/null)"; then
+    echo "[diag] unable to fetch project tasks for blockage diagnosis"
+    return
+  fi
+
+  echo "[diag] blockage diagnosis for unfinished tasks:"
+  echo "${tasks_json}" | jq -r '.[] | select(.status != "done") | "- T#\(.id) \(.title) [\(.status)]"' | sed -n '1,20p'
+
+  while IFS= read -r task_id; do
+    [[ -z "${task_id}" ]] && continue
+
+    local task_json task_title task_status parent_id parent_status caps_json deps_json parent_blockers dep_blockers attempts_used max_attempts
+    task_json="$(echo "${tasks_json}" | jq -c --argjson id "${task_id}" '.[] | select(.id == $id)')"
+    task_title="$(echo "${task_json}" | jq -r '.title')"
+    task_status="$(echo "${task_json}" | jq -r '.status')"
+    parent_id="$(echo "${task_json}" | jq -r '.parent_task_id // empty')"
+    max_attempts="$(echo "${task_json}" | jq -r '.max_attempts')"
+    attempts_used="$(curl -sS "${API_BASE}/projects/${PROJECT_ID}/runtime-alerts?heartbeat_stale_seconds=${HEARTBEAT_SECONDS}" 2>/dev/null | jq -r --argjson id "${task_id}" '([.exhausted_tasks[] | select(.task_id == $id) | .attempts_used][0] // 0)')"
+    caps_json="$(curl -sS "${API_BASE}/tasks/${task_id}/capabilities" 2>/dev/null | jq -c '.required_capabilities // []')"
+    deps_json="$(curl -sS "${API_BASE}/tasks/${task_id}/dependencies" 2>/dev/null | jq -c '[.[] | select(.direction == "predecessor")]')"
+
+    parent_blockers=""
+    if [[ -n "${parent_id}" ]]; then
+      parent_status="$(echo "${tasks_json}" | jq -r --argjson id "${parent_id}" '.[] | select(.id == $id) | .status')"
+      if [[ "${parent_status}" != "done" ]]; then
+        parent_blockers="parent T#${parent_id} is ${parent_status}"
+      fi
+    fi
+
+    dep_blockers="$(echo "${deps_json}" | jq -r '[.[] | select(.status != "done") | "T#\(.task_id) is \(.status)"] | join(", ")')"
+
+    if [[ -n "${parent_blockers}" || -n "${dep_blockers}" ]]; then
+      echo "  - T#${task_id} ${task_title}: blocked by ${parent_blockers}${parent_blockers:+${dep_blockers:+; }}${dep_blockers}"
+      continue
+    fi
+
+    if [[ "${task_status}" == "planned" ]]; then
+      if worker_can_cover_caps "${caps_json}"; then
+        echo "  - T#${task_id} ${task_title}: structurally ready; likely waiting on claim/reconcile timing"
+      else
+        echo "  - T#${task_id} ${task_title}: capability mismatch; requires $(echo "${caps_json}" | jq -r 'join(", ")')"
+      fi
+      continue
+    fi
+
+    if [[ "${task_status}" == "failed" ]]; then
+      echo "  - T#${task_id} ${task_title}: task is failed; manual retry or spec change required"
+      continue
+    fi
+
+    if [[ "${attempts_used}" != "0" && "${attempts_used}" -ge "${max_attempts}" ]]; then
+      echo "  - T#${task_id} ${task_title}: attempts exhausted (${attempts_used}/${max_attempts})"
+      continue
+    fi
+
+    echo "  - T#${task_id} ${task_title}: status=${task_status}; inspect task events and runtime alerts"
+  done < <(echo "${tasks_json}" | jq -r '.[] | select(.status != "done") | .id')
 }
 
 fetch_runtime() {
@@ -267,6 +336,7 @@ while true; do
     if [[ "${idle_cycles}" -ge 3 ]]; then
       echo "[stop] unfinished tasks remain but no worker is alive and nothing is claimable."
       echo "[hint] check capability routing, dependency blockage, or manual intervention requirements."
+      diagnose_blockage
       echo "${runtime_json}" | jq .
       exit 3
     fi

@@ -100,6 +100,73 @@ Why stop on `max_attempts` exhaustion:
 - automatic respawn would only churn without unblocking the project
 - exhausted tasks therefore require human review: adjust the task, raise `max_attempts`, or fix the underlying failure
 
+## Copy-paste prompts you can try
+### 1) Planner prompt
+Use this in a fresh Codex CLI session after `tasq-http` MCP is registered:
+
+```text
+You are a planning agent working with TasQ via MCP tools.
+
+Create a project and actionable task tree for:
+"Go-based YouTube Downloader CLI using Cobra, supporting video/audio download and quality options."
+
+Rules:
+- Use TasQ MCP tools to create one project, root tasks, child tasks, and dependency edges.
+- Keep tasks small enough for one focused worker run.
+- Use required_capabilities sparingly.
+- Keep at least one root task immediately claimable by a generic worker.
+- Prefer generic capability labels: go, cli, integration, testing, docs.
+- Do not implement code in this session.
+- At the end, report the numeric project_id.
+- Also create a workers.json file in the current workspace with this shape:
+  {
+    "project_id": <numeric id>,
+    "workspace": "<absolute workspace path>",
+    "api_base": "http://127.0.0.1:8080",
+    "lease_seconds": 300,
+    "heartbeat_seconds": 60,
+    "poll_seconds": 15,
+    "workers": [
+      {"agent_id": "worker-1", "capabilities": ["go","cli","docs"]},
+      {"agent_id": "worker-2", "capabilities": ["go","integration","testing","docs"]}
+    ]
+  }
+
+At the end, print:
+- project_id
+- concise tree summary
+- dependency summary
+- path to workers.json
+```
+
+### 2) Start workers automatically
+```bash
+./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
+```
+
+### 3) Manual worker prompt
+If you want to run one worker manually instead of the spawner:
+
+```text
+You are a TasQ worker agent executing tasks from queue through MCP.
+
+Use:
+- project_id=<numeric project id>
+- agent_id=worker-1
+- capabilities=["go","cli","integration","testing","docs"]
+- lease_seconds=300
+- heartbeat_seconds=60
+
+Rules:
+- project_id must remain numeric.
+- Claim only through TasQ MCP tools.
+- Immediately fetch task context after claim.
+- If work may take longer than 60 seconds, send tasq_heartbeat before lease expiry.
+- If claim returns no task, stop cleanly.
+- Finish with tasq_complete_task or tasq_fail_task.
+- Include result_payload_version="v2" with summary, changes, paths, commands, tests, artifacts, next_risks.
+```
+
 ## Agent runtime demo
 ```bash
 PROJECT_ID=1 ./scripts/agent_worker_demo.sh
