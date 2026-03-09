@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	pq "github.com/lib/pq"
 )
@@ -236,6 +237,100 @@ func (s *server) heartbeatTaskClaim(w http.ResponseWriter, r *http.Request, task
 		"claim_id":      claim.ID,
 		"attempt_no":    claim.AttemptNo,
 		"lease_seconds": req.LeaseSeconds,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	projectID, pidErr := s.fetchProjectIDByTaskID(r.Context(), taskID)
+	if pidErr == nil {
+		s.maybeRunTreeGuard(r.Context(), projectID)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// saveTaskCheckpoint stores a mid-run note on the active task run.
+func (s *server) saveTaskCheckpoint(w http.ResponseWriter, r *http.Request, taskID int64) {
+	var req checkpointReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.AgentID) == "" {
+		http.Error(w, "agent_id is required", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Note) == "" {
+		http.Error(w, "note is required", http.StatusBadRequest)
+		return
+	}
+	if !s.requireAgentIdentity(w, r, req.AgentID) {
+		return
+	}
+
+	tx, err := s.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	claim, err := getActiveClaim(r.Context(), tx, taskID, req.AgentID, req.ClaimToken)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "active claim not found", http.StatusConflict)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	checkpointPayload, err := json.Marshal(map[string]any{
+		"checkpoint": map[string]any{
+			"note":       strings.TrimSpace(req.Note),
+			"updated_at": time.Now().UTC().Format(time.RFC3339),
+		},
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	res, err := tx.ExecContext(r.Context(), `
+		WITH target AS (
+			SELECT id
+			FROM task_runs
+			WHERE task_id = $1
+			  AND agent_id = $2
+			  AND attempt_no = $3
+			  AND status = 'running'
+			ORDER BY started_at DESC
+			LIMIT 1
+			FOR UPDATE
+		)
+		UPDATE task_runs
+		SET result_payload_json = COALESCE(result_payload_json, '{}'::jsonb) || $4::jsonb
+		WHERE id IN (SELECT id FROM target)`,
+		taskID, req.AgentID, claim.AttemptNo, string(checkpointPayload))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "running task_run not found", http.StatusConflict)
+		return
+	}
+
+	if err := logEvent(r.Context(), tx, taskID, "task.checkpoint.saved", "agent", req.AgentID, map[string]any{
+		"claim_id":   claim.ID,
+		"attempt_no": claim.AttemptNo,
+		"note":       strings.TrimSpace(req.Note),
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -801,7 +896,8 @@ func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID i
 			finished_at,
 			COALESCE(result_payload_json->>'reason', 'released'),
 			COALESCE(result_payload_json->>'resume_hint', ''),
-			COALESCE(result_payload_json->>'to_status', '')
+			COALESCE(result_payload_json->>'to_status', ''),
+			COALESCE(result_payload_json->'checkpoint'->>'note', '')
 		FROM task_runs
 		WHERE task_id = $1
 		  AND status = 'released'
@@ -814,7 +910,7 @@ func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID i
 	defer interruptedRows.Close()
 	for interruptedRows.Next() {
 		var run interruptedRunSummary
-		if err := interruptedRows.Scan(&run.ID, &run.AgentID, &run.AttemptNo, &run.FinishedAt, &run.Reason, &run.ResumeHint, &run.ToStatus); err != nil {
+		if err := interruptedRows.Scan(&run.ID, &run.AgentID, &run.AttemptNo, &run.FinishedAt, &run.Reason, &run.ResumeHint, &run.ToStatus, &run.Checkpoint); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

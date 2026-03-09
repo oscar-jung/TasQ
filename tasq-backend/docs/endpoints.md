@@ -62,6 +62,7 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
     - `task.moved`
     - `task.claimed`
     - `task.claim.heartbeat`
+    - `task.checkpoint.saved`
     - `task.claim.released`
     - `task.completed`
     - `task.failed`
@@ -137,7 +138,7 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
   - Purpose: get task + dependencies + parent chain context.
   - Includes:
     - `recent_runs`
-    - `interrupted_runs` (recent released runs with resume hints)
+    - `interrupted_runs` (recent released runs with resume hints and optional checkpoint note)
     - `git_refs`
 
 - `GET /tasks/:task_id/events?limit=50`
@@ -155,6 +156,14 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
 - `POST /tasks/:task_id/heartbeat`
   - Handler: `(*server).heartbeatTaskClaim` in `internal/server/agents.go`
   - Purpose: extend claim lease.
+
+- `POST /tasks/:task_id/checkpoint`
+  - Handler: `(*server).saveTaskCheckpoint` in `internal/server/agents.go`
+  - Purpose: save a mid-run checkpoint note on the active task run.
+  - Required body fields:
+    - `agent_id`
+    - `claim_token`
+    - `note`
 
 - `POST /tasks/:task_id/release`
   - Handler: `(*server).releaseTaskClaim` in `internal/server/agents.go`

@@ -54,6 +54,7 @@ type InterruptedRunSummary = {
   reason: string
   resume_hint: string
   to_status: string
+  checkpoint: string
 }
 
 type TaskContextResponse = {
@@ -271,6 +272,7 @@ export function App() {
   const [claimTokenDraft, setClaimTokenDraft] = useState('')
   const [agentCapabilitiesDraft, setAgentCapabilitiesDraft] = useState('')
   const [failReasonDraft, setFailReasonDraft] = useState('')
+  const [checkpointNoteDraft, setCheckpointNoteDraft] = useState('')
   const [addChildModalTask, setAddChildModalTask] = useState<TaskNode | null>(null)
   const [addChildTitle, setAddChildTitle] = useState('')
   const [isAddingChild, setIsAddingChild] = useState(false)
@@ -620,6 +622,7 @@ export function App() {
         'task.execution_policy.updated',
         'task.capabilities.updated',
         'task.git.linked',
+        'task.checkpoint.saved',
         'task.invalidated',
         'task.status.updated',
         'task.completed',
@@ -632,6 +635,7 @@ export function App() {
       const runtimeEventTypes = new Set([
         'task.claimed',
         'task.claim.heartbeat',
+        'task.checkpoint.saved',
         'task.claim.released',
         'task.completed',
         'task.failed',
@@ -1886,6 +1890,50 @@ export function App() {
     }
   }
 
+  async function saveCheckpoint() {
+    if (!selectedTask) return
+    const agentID = agentIDDraft.trim()
+    const note = checkpointNoteDraft.trim()
+    if (!agentID || !claimTokenDraft.trim()) {
+      setTaskMessage('Agent ID and claim token are required.')
+      return
+    }
+    if (!note) {
+      setTaskMessage('Checkpoint note is required.')
+      return
+    }
+
+    setIsAgentActionRunning(true)
+    setTaskMessage('')
+    try {
+      const res = await fetch(`${apiBase}/tasks/${selectedTask.id}/checkpoint`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: agentID, claim_token: claimTokenDraft.trim(), note })
+      })
+      if (!res.ok) {
+        const message = await res.text()
+        throw new Error(message || 'failed to save checkpoint')
+      }
+      await refreshObservability(selectedTask.id, selectedProjectID)
+      setTaskMessage('Checkpoint saved.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'failed to save checkpoint'
+      setTaskMessage(message)
+    } finally {
+      setIsAgentActionRunning(false)
+    }
+  }
+
+  function buildSuggestedRerunBranch(task: TaskNode) {
+    const slug = task.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 32)
+    return `rerun/task-${task.id}-${slug || 'task'}`
+  }
+
   async function completeClaimedTask() {
     if (!selectedTask) return
     const agentID = agentIDDraft.trim()
@@ -2386,7 +2434,26 @@ export function App() {
                     </div>
 
                     <form className="mt-3 space-y-2" onSubmit={saveGitLink}>
-                      <p className="text-[11px] text-muted-foreground">Link Git result</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-[11px] text-muted-foreground">Link Git result</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            Recommended for reruns: create a fresh branch, then link the new base and produced commit.
+                          </p>
+                        </div>
+                        {selectedTask && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="shrink-0"
+                            onClick={() => setGitBranchDraft(buildSuggestedRerunBranch(selectedTask))}
+                            disabled={isSavingGitLink}
+                          >
+                            Use rerun branch
+                          </Button>
+                        )}
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         <Input
                           placeholder="repo"
@@ -2615,6 +2682,11 @@ export function App() {
                                     <span className="uppercase text-amber-200">{run.reason.replaceAll('_', ' ')}</span>
                                   </div>
                                   {run.resume_hint && <p className="mt-1 text-muted-foreground">{run.resume_hint}</p>}
+                                  {run.checkpoint && (
+                                    <p className="mt-1 text-[11px] text-muted-foreground">
+                                      Last checkpoint: {run.checkpoint}
+                                    </p>
+                                  )}
                                   {run.to_status && (
                                     <p className="mt-1 text-[11px] text-muted-foreground">Released to: {run.to_status}</p>
                                   )}
@@ -2749,6 +2821,13 @@ export function App() {
                           onChange={(e) => setFailReasonDraft(e.target.value)}
                           disabled={isAgentActionRunning}
                         />
+                        <Input
+                          className="col-span-2"
+                          placeholder="checkpoint note"
+                          value={checkpointNoteDraft}
+                          onChange={(e) => setCheckpointNoteDraft(e.target.value)}
+                          disabled={isAgentActionRunning}
+                        />
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <Button size="sm" variant="outline" disabled={isAgentActionRunning} onClick={() => void claimNextTask()}>
@@ -2761,6 +2840,14 @@ export function App() {
                           onClick={() => void heartbeatClaim()}
                         >
                           Heartbeat
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={isAgentActionRunning || !selectedTask}
+                          onClick={() => void saveCheckpoint()}
+                        >
+                          Checkpoint
                         </Button>
                         <Button
                           size="sm"

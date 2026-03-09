@@ -99,6 +99,12 @@ type heartbeatReq struct {
 	ClaimToken   string `json:"claim_token"`
 }
 
+type checkpointReq struct {
+	AgentID    string `json:"agent_id"`
+	ClaimToken string `json:"claim_token"`
+	Note       string `json:"note"`
+}
+
 type releaseReq struct {
 	AgentID    string `json:"agent_id"`
 	ClaimToken string `json:"claim_token"`
@@ -200,6 +206,7 @@ type interruptedRunSummary struct {
 	Reason     string     `json:"reason"`
 	ResumeHint string     `json:"resume_hint"`
 	ToStatus   string     `json:"to_status"`
+	Checkpoint string     `json:"checkpoint"`
 }
 
 type taskEventSummary struct {
@@ -488,6 +495,14 @@ func (s *server) tasksSubrouter(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.heartbeatTaskClaim(w, r, taskID)
+			return
+		}
+	case "checkpoint":
+		if r.Method == http.MethodPost {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "task:claim", false); !ok {
+				return
+			}
+			s.saveTaskCheckpoint(w, r, taskID)
 			return
 		}
 	case "release":

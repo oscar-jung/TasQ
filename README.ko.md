@@ -213,6 +213,7 @@ Rules:
 - Claim only through TasQ MCP tools.
 - Immediately fetch task context after claim.
 - If work may take longer than 60 seconds, send tasq_heartbeat before lease expiry.
+- 의미 있는 중간 단계가 끝났거나 위험한 수정/테스트 직전에는 checkpoint note도 남겨.
 - task context에 `interrupted_runs`가 있으면, 편집 전에 가장 최근 interruption reason과 resume hint를 먼저 확인해.
 - If claim returns no task, stop cleanly.
 - Finish with tasq_complete_task or tasq_fail_task.
@@ -222,6 +223,11 @@ Rules:
   - `## Changes`
   - `## Verification`
   - `## Risks`
+
+rerun 시에는 branch-first 전략을 권장해:
+- rerun 경로용 새 브랜치를 만든다
+- 그 브랜치에서 구현을 이어간다
+- branch / base commit / produced commit을 task에 다시 링크한다
 ```
 
 ## 에이전트 데모 실행

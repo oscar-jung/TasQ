@@ -83,8 +83,9 @@ cat tasq_backup.sql | docker compose exec -T db psql -U tasq -d tasq
      - `task.reordered`
      - `task.moved`
      - `task.claimed`
-      - `task.claim.heartbeat`
-      - `task.claim.released`
+     - `task.claim.heartbeat`
+     - `task.checkpoint.saved`
+     - `task.claim.released`
       - `task.invalidated`
       - `task.completed`
       - `task.failed`
@@ -107,6 +108,15 @@ cat tasq_backup.sql | docker compose exec -T db psql -U tasq -d tasq
 ```bash
 ./scripts/lease_reclaim_smoke.sh
 ```
+
+### 4) Mid-run checkpointing
+- Long-running agents should save checkpoint notes during meaningful progress, not just heartbeat.
+- Use `POST /tasks/:id/checkpoint` with the active `claim_token`.
+- Good checkpoint notes should capture:
+  - current file/module being changed
+  - what is already complete
+  - what remains risky or unfinished
+- If a worker is interrupted, the next worker should inspect `task context -> interrupted_runs` before continuing.
 
 ## Recommended Metrics (next)
 - queue depth (claimable planned tasks)

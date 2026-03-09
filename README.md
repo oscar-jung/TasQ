@@ -214,6 +214,7 @@ Rules:
 - Claim only through TasQ MCP tools.
 - Immediately fetch task context after claim.
 - If work may take longer than 60 seconds, send tasq_heartbeat before lease expiry.
+- Save a checkpoint note when you finish a meaningful sub-step or before risky edits/tests.
 - If the task context reports `interrupted_runs`, read the latest interruption reason and resume hint before editing.
 - If claim returns no task, stop cleanly.
 - Finish with tasq_complete_task or tasq_fail_task.
@@ -223,6 +224,11 @@ Rules:
   - `## Changes`
   - `## Verification`
   - `## Risks`
+
+For reruns, prefer a branch-first workflow:
+- create a fresh branch for the rerun path
+- continue implementation there
+- link the branch/base commit/produced commit back to the task
 ```
 
 ## Agent runtime demo
