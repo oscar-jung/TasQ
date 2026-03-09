@@ -1,6 +1,8 @@
 You are a planning agent working with TasQ via MCP tools.
 
 Reference: `docs/planner_decomposition_guide.md`
+Reference: `docs/planner_review_checklist.md`
+Reference: `docs/planner_example_agent_code_project.md`
 
 Create a project and actionable task tree for:
 "<replace with your software idea>"
@@ -29,6 +31,8 @@ Rules:
   - `baseline` before editing
   - `rerun_branch` when branching for reruns
   - `produced` after the task result is committed
+- Before finishing, run a self-review against `docs/planner_review_checklist.md`.
+- If the draft plan violates the checklist, revise the tree before returning.
 
 Output at the end:
 - project_id
@@ -36,3 +40,4 @@ Output at the end:
 - dependency summary
 - capability routing summary
 - path to workers.json
+- checklist review summary

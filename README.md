@@ -150,6 +150,8 @@ Use this in a fresh Codex CLI session after `tasq-http` MCP is registered:
 
 - Template file: [templates/planner_prompt_tasq.txt](/Users/jung-yeon-woo/Development/Projects/tasq/templates/planner_prompt_tasq.txt)
 - Decomposition guide: [docs/planner_decomposition_guide.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/planner_decomposition_guide.md)
+- Review checklist: [docs/planner_review_checklist.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/planner_review_checklist.md)
+- Agent code project example: [docs/planner_example_agent_code_project.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/planner_example_agent_code_project.md)
 - Worker spec sample: [examples/workers.sample.json](/Users/jung-yeon-woo/Development/Projects/tasq/examples/workers.sample.json)
 - Worker spec schema: [schemas/workers.schema.json](/Users/jung-yeon-woo/Development/Projects/tasq/schemas/workers.schema.json)
 
@@ -166,6 +168,7 @@ Rules:
 - Keep at least one root task immediately claimable by a generic worker.
 - Prefer vertical decomposition over wide sibling trees when tasks will touch the same files or modules.
 - Keep root tasks few and meaningful; parallelize only when the work is clearly merge-safe.
+- For agent-driven code projects, create the project with `git_policy="required"` unless there is a concrete reason not to.
 - Prefer generic capability labels: go, cli, integration, testing, docs.
 - Do not implement code in this session.
 - At the end, report the numeric project_id.
@@ -188,6 +191,7 @@ At the end, print:
 - concise tree summary
 - dependency summary
 - path to workers.json
+- checklist review summary
 ```
 
 ### 2) Start workers automatically

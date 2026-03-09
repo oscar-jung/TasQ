@@ -149,6 +149,8 @@ cp ./examples/workers.sample.json /abs/path/to/workers.json
 
 - 템플릿 파일: [templates/planner_prompt_tasq.txt](/Users/jung-yeon-woo/Development/Projects/tasq/templates/planner_prompt_tasq.txt)
 - 분해 가이드: [docs/planner_decomposition_guide.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/planner_decomposition_guide.md)
+- 리뷰 체크리스트: [docs/planner_review_checklist.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/planner_review_checklist.md)
+- 에이전트 코드 프로젝트 예시: [docs/planner_example_agent_code_project.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/planner_example_agent_code_project.md)
 - 워커 스펙 샘플: [examples/workers.sample.json](/Users/jung-yeon-woo/Development/Projects/tasq/examples/workers.sample.json)
 - 워커 스펙 스키마: [schemas/workers.schema.json](/Users/jung-yeon-woo/Development/Projects/tasq/schemas/workers.schema.json)
 
@@ -165,6 +167,7 @@ Rules:
 - Keep at least one root task immediately claimable by a generic worker.
 - 같은 파일이나 모듈을 건드릴 가능성이 높다면 넓은 sibling 구조보다 수직 체인 구조를 우선해.
 - 루트 태스크 수는 과도하게 늘리지 말고, 병렬화는 실제로 merge-safe한 경우에만 허용해.
+- agent 중심 코드 프로젝트라면 특별한 이유가 없는 한 project를 `git_policy="required"`로 생성해.
 - Prefer generic capability labels: go, cli, integration, testing, docs.
 - Do not implement code in this session.
 - At the end, report the numeric project_id.
@@ -187,6 +190,7 @@ At the end, print:
 - concise tree summary
 - dependency summary
 - path to workers.json
+- checklist review summary
 ```
 
 ### 2) 워커 자동 실행

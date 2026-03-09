@@ -19,6 +19,7 @@ Keep tasks small enough to finish in one focused work chunk.
 Use required_capabilities sparingly.
 Keep at least one root task immediately claimable by a generic worker.
 At the end, report the numeric project_id and produce a worker spawn spec JSON file.
+Before finishing, review the draft plan against `docs/planner_review_checklist.md` and revise if needed.
 ```
 
 ### Required MCP tools
