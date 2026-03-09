@@ -55,6 +55,15 @@ docker compose up --build
 ./scripts/topology_move_reorder_smoke.sh
 ```
 
+## Agent runtime demo
+```bash
+PROJECT_ID=1 ./scripts/agent_worker_demo.sh
+PROJECT_ID=1 ACTION=fail ./scripts/agent_worker_demo.sh
+PROJECT_ID=1 ACTION=release ./scripts/agent_worker_demo.sh
+```
+
+- Agent API contract: `tasq-backend/docs/agent_contract.md`
+
 ## Next implementation targets
 - Agent capability-based claim filters
 - Dependency graph visualization

@@ -23,6 +23,12 @@
 - `POST /tasks/:id/fail`
 - `POST /tasks/:id/git-link`
 - `GET /tasks/:id/context`
+- `GET /tasks/:id/events`
+- `GET /projects/:id/events`
+
+## Agent integration contract
+- `docs/agent_contract.md`
+- Demo worker script: `../scripts/agent_worker_demo.sh`
 
 ## Notes
 - Tasks are ordered by `display_order ASC` (fallback `created_at ASC`) within a project/parent.
