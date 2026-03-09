@@ -29,6 +29,7 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, projectID in
 		http.Error(w, "max_attempts must be >= 1", http.StatusBadRequest)
 		return
 	}
+	req.GitPolicy = normalizeTaskGitPolicy(req.GitPolicy)
 	requiredCapabilities := normalizeCapabilities(req.RequiredCapabilities)
 
 	tx, err := s.db.BeginTx(r.Context(), nil)
@@ -56,16 +57,16 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, projectID in
 
 	var t task
 	err = tx.QueryRowContext(r.Context(), `
-		INSERT INTO tasks(project_id, parent_task_id, title, spec_md, status, max_attempts, required_capabilities, display_order)
-		VALUES ($1, $2, $3, $4, 'planned', COALESCE($5, 5), $6::text[], COALESCE((
+		INSERT INTO tasks(project_id, parent_task_id, title, spec_md, status, max_attempts, git_policy, required_capabilities, display_order)
+		VALUES ($1, $2, $3, $4, 'planned', COALESCE($5, 5), $6, $7::text[], COALESCE((
 			SELECT MAX(display_order) + 1024
 			FROM tasks
 			WHERE project_id = $1
 			  AND parent_task_id IS NOT DISTINCT FROM $2
 		), 1024))
-		RETURNING id, project_id, parent_task_id, title, spec_md, result_md, status, max_attempts, display_order, created_at, started_at, done_at`,
-		projectID, req.ParentTaskID, req.Title, req.SpecMD, req.MaxAttempts, pq.Array(requiredCapabilities),
-	).Scan(&t.ID, &t.ProjectID, &t.ParentID, &t.Title, &t.SpecMD, &t.ResultMD, &t.Status, &t.MaxAttempts, &t.DisplayOrder, &t.CreatedAt, &t.StartedAt, &t.DoneAt)
+		RETURNING id, project_id, parent_task_id, title, spec_md, result_md, status, max_attempts, git_policy, display_order, created_at, started_at, done_at`,
+		projectID, req.ParentTaskID, req.Title, req.SpecMD, req.MaxAttempts, req.GitPolicy, pq.Array(requiredCapabilities),
+	).Scan(&t.ID, &t.ProjectID, &t.ParentID, &t.Title, &t.SpecMD, &t.ResultMD, &t.Status, &t.MaxAttempts, &t.GitPolicy, &t.DisplayOrder, &t.CreatedAt, &t.StartedAt, &t.DoneAt)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -76,6 +77,7 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, projectID in
 		"parent_task_id":        req.ParentTaskID,
 		"title":                 t.Title,
 		"max_attempts":          t.MaxAttempts,
+		"git_policy":            t.GitPolicy,
 		"required_capabilities": requiredCapabilities,
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -418,6 +420,7 @@ func (s *server) updateTaskExecutionPolicy(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
+	req.GitPolicy = normalizeTaskGitPolicy(req.GitPolicy)
 	if req.MaxAttempts < 1 {
 		http.Error(w, "max_attempts must be >= 1", http.StatusBadRequest)
 		return
@@ -443,8 +446,9 @@ func (s *server) updateTaskExecutionPolicy(w http.ResponseWriter, r *http.Reques
 	if _, err := tx.ExecContext(r.Context(), `
 		UPDATE tasks
 		SET max_attempts = $2,
+			git_policy = $3,
 			updated_at = NOW()
-		WHERE id = $1`, taskID, req.MaxAttempts); err != nil {
+		WHERE id = $1`, taskID, req.MaxAttempts, req.GitPolicy); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -452,6 +456,7 @@ func (s *server) updateTaskExecutionPolicy(w http.ResponseWriter, r *http.Reques
 	actorType, actorID := actorForEvent(r)
 	if err := logEvent(r.Context(), tx, taskID, "task.execution_policy.updated", actorType, actorID, map[string]any{
 		"max_attempts": req.MaxAttempts,
+		"git_policy":   req.GitPolicy,
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -464,6 +469,30 @@ func (s *server) updateTaskExecutionPolicy(w http.ResponseWriter, r *http.Reques
 	s.maybeRunTreeGuard(r.Context(), projectID)
 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func normalizeProjectGitPolicy(policy string) string {
+	switch strings.ToLower(strings.TrimSpace(policy)) {
+	case "", "optional":
+		return "optional"
+	case "required":
+		return "required"
+	default:
+		return "optional"
+	}
+}
+
+func normalizeTaskGitPolicy(policy string) string {
+	switch strings.ToLower(strings.TrimSpace(policy)) {
+	case "", "inherit":
+		return "inherit"
+	case "required":
+		return "required"
+	case "not_required":
+		return "not_required"
+	default:
+		return "inherit"
+	}
 }
 
 // linkTaskGitRef handles POST /tasks/:task_id/git-link.

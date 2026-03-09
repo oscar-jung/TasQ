@@ -105,6 +105,11 @@ cat tasq_backup.sql | docker compose exec -T db psql -U tasq -d tasq
   - use `ref_kind=baseline` for the commit you branched from
   - use `ref_kind=rerun_branch` for the branch marker/ref you want operators to resume on
   - use `ref_kind=produced` for the commit created by the rerun
+- For agent-driven code projects, prefer `projects.git_policy=required`.
+- Under required git policy:
+  - workers should link `baseline` before editing
+  - workers should link `produced` before calling `complete`
+  - TasQ rejects completion if the baseline/produced requirements are not met
 
 ### 3) Reclaim behavior check
 - Run smoke:

@@ -117,6 +117,7 @@ type linkGitRefArgs struct {
 type createProjectArgs struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	GitPolicy   string `json:"git_policy,omitempty"`
 }
 
 type createTaskArgs struct {
@@ -125,6 +126,7 @@ type createTaskArgs struct {
 	Title                string   `json:"title"`
 	SpecMD               string   `json:"spec_md,omitempty"`
 	MaxAttempts          *int64   `json:"max_attempts,omitempty"`
+	GitPolicy            string   `json:"git_policy,omitempty"`
 	RequiredCapabilities []string `json:"required_capabilities,omitempty"`
 }
 
@@ -507,6 +509,7 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 							"properties": map[string]any{
 								"name":        map[string]any{"type": "string"},
 								"description": map[string]any{"type": "string"},
+								"git_policy":  map[string]any{"type": "string", "enum": []string{"optional", "required"}},
 							},
 							"required": []string{"name"},
 						},
@@ -522,6 +525,7 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 								"title":          map[string]any{"type": "string"},
 								"spec_md":        map[string]any{"type": "string"},
 								"max_attempts":   map[string]any{"type": "integer"},
+								"git_policy":     map[string]any{"type": "string", "enum": []string{"inherit", "required", "not_required"}},
 								"required_capabilities": map[string]any{
 									"type":  "array",
 									"items": map[string]any{"type": "string"},
@@ -763,6 +767,7 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 			resBody, err := tasqJSON(cfg, http.MethodPost, "/projects", map[string]any{
 				"name":        strings.TrimSpace(args.Name),
 				"description": strings.TrimSpace(args.Description),
+				"git_policy":  strings.TrimSpace(args.GitPolicy),
 			}, adminToken)
 			if err != nil {
 				return toolError(err)
@@ -784,6 +789,7 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 				"parent_task_id":        args.ParentTaskID,
 				"title":                 strings.TrimSpace(args.Title),
 				"spec_md":               strings.TrimSpace(args.SpecMD),
+				"git_policy":            strings.TrimSpace(args.GitPolicy),
 				"required_capabilities": args.RequiredCapabilities,
 			}
 			if args.MaxAttempts != nil {

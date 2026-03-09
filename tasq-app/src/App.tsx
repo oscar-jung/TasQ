@@ -18,6 +18,7 @@ type Project = {
   id: number
   name: string
   description: string
+  git_policy: 'optional' | 'required'
 }
 
 type TaskContentPatch = {
@@ -62,6 +63,11 @@ type TaskContextResponse = {
   recent_runs: TaskRunSummary[]
   interrupted_runs: InterruptedRunSummary[]
   git_refs: TaskGitRefSummary[]
+  project_git_policy: 'optional' | 'required'
+  task_git_policy: 'inherit' | 'required' | 'not_required'
+  effective_git_policy: 'optional' | 'required'
+  has_baseline_ref: boolean
+  has_produced_ref: boolean
 }
 
 type TaskEventSummary = {
@@ -221,6 +227,7 @@ export function App() {
 
   const [editingProjectID, setEditingProjectID] = useState<number | null>(null)
   const [editingProjectName, setEditingProjectName] = useState('')
+  const [editingProjectGitPolicy, setEditingProjectGitPolicy] = useState<'optional' | 'required'>('optional')
   const [deleteProjectModal, setDeleteProjectModal] = useState<Project | null>(null)
   const [isDeletingProject, setIsDeletingProject] = useState(false)
 
@@ -239,6 +246,7 @@ export function App() {
   const [isSavingResult, setIsSavingResult] = useState(false)
   const [isSavingStatus, setIsSavingStatus] = useState(false)
   const [isSavingExecutionPolicy, setIsSavingExecutionPolicy] = useState(false)
+  const [gitPolicyDraft, setGitPolicyDraft] = useState<'inherit' | 'required' | 'not_required'>('inherit')
   const [isSavingGitLink, setIsSavingGitLink] = useState(false)
   const [isSavingCapabilities, setIsSavingCapabilities] = useState(false)
   const [isAgentActionRunning, setIsAgentActionRunning] = useState(false)
@@ -528,6 +536,7 @@ export function App() {
       setIsResultDirty(false)
       setTaskMessage('')
       setMaxAttemptsDraft(String(selectedTask.max_attempts))
+      setGitPolicyDraft(selectedTask.git_policy ?? 'inherit')
       setRequiredCapabilitiesDraft('')
       return
     }
@@ -543,6 +552,7 @@ export function App() {
     }
     if (!isSavingExecutionPolicy) {
       setMaxAttemptsDraft(String(selectedTask.max_attempts))
+      setGitPolicyDraft(selectedTask.git_policy ?? 'inherit')
     }
   }, [
     selectedTask,
@@ -941,7 +951,11 @@ export function App() {
 
   async function fetchProjects() {
     const res = await fetch(`${apiBase}/projects`)
-    const data = (await res.json()) as Project[]
+    const raw = (await res.json()) as Array<Project & { git_policy?: string }>
+    const data = raw.map((project) => ({
+      ...project,
+      git_policy: project.git_policy === 'required' ? 'required' : 'optional'
+    }))
     setProjects(data)
     if (data.length === 0) {
       setSelectedProjectID(null)
@@ -1010,11 +1024,24 @@ export function App() {
       recent_runs?: TaskRunSummary[] | null
       interrupted_runs?: InterruptedRunSummary[] | null
       git_refs?: TaskGitRefSummary[] | null
+      project_git_policy?: 'optional' | 'required'
+      task_git_policy?: 'inherit' | 'required' | 'not_required'
+      effective_git_policy?: 'optional' | 'required'
+      has_baseline_ref?: boolean
+      has_produced_ref?: boolean
     }
     return {
       recent_runs: Array.isArray(raw.recent_runs) ? raw.recent_runs : [],
       interrupted_runs: Array.isArray(raw.interrupted_runs) ? raw.interrupted_runs : [],
-      git_refs: Array.isArray(raw.git_refs) ? raw.git_refs : []
+      git_refs: Array.isArray(raw.git_refs) ? raw.git_refs : [],
+      project_git_policy: raw.project_git_policy === 'required' ? 'required' : 'optional',
+      task_git_policy:
+        raw.task_git_policy === 'required' || raw.task_git_policy === 'not_required'
+          ? raw.task_git_policy
+          : 'inherit',
+      effective_git_policy: raw.effective_git_policy === 'required' ? 'required' : 'optional',
+      has_baseline_ref: Boolean(raw.has_baseline_ref),
+      has_produced_ref: Boolean(raw.has_produced_ref)
     }
   }
 
@@ -1212,11 +1239,15 @@ export function App() {
     }
   }
 
-  async function patchExecutionPolicy(taskID: number, maxAttempts: number) {
+  async function patchExecutionPolicy(
+    taskID: number,
+    maxAttempts: number,
+    gitPolicy: 'inherit' | 'required' | 'not_required'
+  ) {
     const res = await fetch(`${apiBase}/tasks/${taskID}/execution-policy`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ max_attempts: maxAttempts })
+      body: JSON.stringify({ max_attempts: maxAttempts, git_policy: gitPolicy })
     })
     if (!res.ok) {
       const message = await res.text()
@@ -1415,7 +1446,7 @@ export function App() {
     await fetch(`${apiBase}/projects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newProjectName.trim(), description: '' })
+      body: JSON.stringify({ name: newProjectName.trim(), description: '', git_policy: 'optional' })
     })
     setNewProjectName('')
     await fetchProjects()
@@ -1424,11 +1455,13 @@ export function App() {
   function startProjectEdit(project: Project) {
     setEditingProjectID(project.id)
     setEditingProjectName(project.name)
+    setEditingProjectGitPolicy(project.git_policy)
   }
 
   function cancelProjectEdit() {
     setEditingProjectID(null)
     setEditingProjectName('')
+    setEditingProjectGitPolicy('optional')
   }
 
   async function saveProjectEdit(projectID: number) {
@@ -1437,7 +1470,7 @@ export function App() {
     await fetch(`${apiBase}/projects/${projectID}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: trimmed })
+      body: JSON.stringify({ name: trimmed, git_policy: editingProjectGitPolicy })
     })
     cancelProjectEdit()
     await fetchProjects()
@@ -1700,12 +1733,12 @@ export function App() {
       setTaskMessage('Max attempts must be an integer >= 1.')
       return
     }
-    if (parsed === selectedTask.max_attempts) return
+    if (parsed === selectedTask.max_attempts && gitPolicyDraft === selectedTask.git_policy) return
 
     setTaskMessage('')
     setIsSavingExecutionPolicy(true)
     try {
-      await patchExecutionPolicy(selectedTask.id, parsed)
+      await patchExecutionPolicy(selectedTask.id, parsed, gitPolicyDraft)
       setTaskMessage('Execution policy saved.')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'failed to save execution policy'
@@ -2124,9 +2157,16 @@ export function App() {
                       <div className="flex min-w-0 flex-1 items-center gap-2">
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-left text-sm">{project.name}</p>
-                          <p className="truncate text-left text-[10px] uppercase tracking-[0.22em] text-muted-foreground/80">
-                            Project #{project.id}
-                          </p>
+                          <div className="mt-0.5 flex items-center gap-1.5">
+                            <p className="truncate text-left text-[10px] uppercase tracking-[0.22em] text-muted-foreground/80">
+                              Project #{project.id}
+                            </p>
+                            {project.git_policy === 'required' && (
+                              <span className="rounded-full border border-emerald-500/50 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-emerald-200">
+                                git required
+                              </span>
+                            )}
+                          </div>
                         </div>
                         {badge?.loading && <span className="h-2 w-2 rounded-full bg-slate-400" />}
                         {!badge?.loading && badge?.error && <span className="h-2 w-2 rounded-full bg-rose-400" />}
@@ -2140,12 +2180,22 @@ export function App() {
 
                     {isEditing && (
                       <>
-                        <Input
-                          autoFocus
-                          className="h-8 flex-1"
-                          value={editingProjectName}
-                          onChange={(e) => setEditingProjectName(e.target.value)}
-                        />
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
+                          <Input
+                            autoFocus
+                            className="h-8 flex-1"
+                            value={editingProjectName}
+                            onChange={(e) => setEditingProjectName(e.target.value)}
+                          />
+                          <select
+                            className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                            value={editingProjectGitPolicy}
+                            onChange={(e) => setEditingProjectGitPolicy(e.target.value as 'optional' | 'required')}
+                          >
+                            <option value="optional">git optional</option>
+                            <option value="required">git required</option>
+                          </select>
+                        </div>
                         <Button size="sm" variant="ghost" onClick={() => void saveProjectEdit(project.id)}>
                           <Check className="h-4 w-4" />
                         </Button>
@@ -2195,9 +2245,14 @@ export function App() {
           <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
             <span>{selectedProject ? `Project: ${selectedProject.name}` : 'Select a project'}</span>
             {selectedProject && (
-              <span className="rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                ID {selectedProject.id}
-              </span>
+              <>
+                <span className="rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                  ID {selectedProject.id}
+                </span>
+                <span className="rounded-full border border-emerald-500/50 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-emerald-200">
+                  Git {selectedProject.git_policy}
+                </span>
+              </>
             )}
           </div>
         </CardHeader>
@@ -2417,7 +2472,7 @@ export function App() {
 
                 {isExecutionOpen && (
                   <div className="border-t border-border/70 p-3">
-                    <div className="flex items-end gap-2">
+                    <div className="grid gap-3 xl:grid-cols-[112px_minmax(0,1fr)_auto] xl:items-end">
                       <div className="w-28">
                         <p className="mb-1 text-[11px] text-muted-foreground">Max attempts</p>
                         <Input
@@ -2427,6 +2482,21 @@ export function App() {
                           onChange={(e) => setMaxAttemptsDraft(e.target.value)}
                           className="h-9"
                         />
+                      </div>
+                      <div>
+                        <p className="mb-1 text-[11px] text-muted-foreground">Git policy override</p>
+                        <select
+                          className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                          value={gitPolicyDraft}
+                          onChange={(e) =>
+                            setGitPolicyDraft(e.target.value as 'inherit' | 'required' | 'not_required')
+                          }
+                          disabled={isSavingExecutionPolicy}
+                        >
+                          <option value="inherit">Inherit project default</option>
+                          <option value="required">Require Git refs</option>
+                          <option value="not_required">Do not require Git refs</option>
+                        </select>
                       </div>
                       <Button size="sm" variant="outline" disabled={isSavingExecutionPolicy} onClick={() => void saveExecutionPolicy()}>
                         {isSavingExecutionPolicy ? 'Saving...' : 'Save policy'}
@@ -2730,6 +2800,31 @@ export function App() {
 
                         <div>
                           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Git Recovery Summary</p>
+                          <div className="mt-1 rounded-md border bg-background/40 p-2 text-xs">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                                Project: {taskContext.project_git_policy}
+                              </span>
+                              <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                                Task: {taskContext.task_git_policy}
+                              </span>
+                              <span className="rounded-full border border-emerald-500/60 px-2 py-0.5 text-[10px] uppercase tracking-wide text-emerald-200">
+                                Effective: {taskContext.effective_git_policy}
+                              </span>
+                            </div>
+                            {taskContext.effective_git_policy === 'required' && (
+                              <p className="mt-2 text-muted-foreground">
+                                Completion is blocked until a baseline ref exists and a produced ref is linked during the current attempt.
+                              </p>
+                            )}
+                            {taskContext.effective_git_policy === 'required' && (!taskContext.has_baseline_ref || !taskContext.has_produced_ref) && (
+                              <p className="mt-1 text-amber-200">
+                                Missing: {!taskContext.has_baseline_ref ? 'baseline ref' : ''}
+                                {!taskContext.has_baseline_ref && !taskContext.has_produced_ref ? ' and ' : ''}
+                                {!taskContext.has_produced_ref ? 'produced ref' : ''}
+                              </p>
+                            )}
+                          </div>
                           <div className="mt-1 grid gap-2 rounded-md border bg-background/50 p-2 text-xs xl:grid-cols-3">
                             <div className="rounded border border-border/60 bg-background/40 p-2">
                               <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Baseline</p>

@@ -56,7 +56,7 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 
 	var t task
 	err = tx.QueryRowContext(r.Context(), `
-		SELECT t.id, t.project_id, t.parent_task_id, t.title, t.spec_md, t.result_md, t.status, t.max_attempts, t.display_order, t.created_at, t.started_at, t.done_at
+		SELECT t.id, t.project_id, t.parent_task_id, t.title, t.spec_md, t.result_md, t.status, t.max_attempts, t.git_policy, t.display_order, t.created_at, t.started_at, t.done_at
 		FROM tasks t
 		WHERE t.project_id = $1
 		  AND t.status = 'planned'
@@ -94,7 +94,7 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 		ORDER BY t.display_order ASC, t.created_at ASC
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED`, req.ProjectID, pq.Array(capabilities)).
-		Scan(&t.ID, &t.ProjectID, &t.ParentID, &t.Title, &t.SpecMD, &t.ResultMD, &t.Status, &t.MaxAttempts, &t.DisplayOrder, &t.CreatedAt, &t.StartedAt, &t.DoneAt)
+		Scan(&t.ID, &t.ProjectID, &t.ParentID, &t.Title, &t.SpecMD, &t.ResultMD, &t.Status, &t.MaxAttempts, &t.GitPolicy, &t.DisplayOrder, &t.CreatedAt, &t.StartedAt, &t.DoneAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeJSON(w, http.StatusOK, map[string]any{"task": nil, "message": "no claimable task"})
 		return
@@ -486,6 +486,30 @@ func (s *server) completeTask(w http.ResponseWriter, r *http.Request, taskID int
 		http.Error(w, "all predecessor tasks must be done", http.StatusConflict)
 		return
 	}
+	projectGitPolicy, taskGitPolicy, effectiveGitPolicy, err := resolveTaskGitPolicyTx(r.Context(), tx, taskID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if effectiveGitPolicy == "required" {
+		hasBaselineRef, hasCurrentProducedRef, err := validateGitPolicyCompletionTx(r.Context(), tx, taskID, claim.ClaimedAt)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if !hasBaselineRef || !hasCurrentProducedRef {
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error":                "git policy unmet",
+				"project_git_policy":   projectGitPolicy,
+				"task_git_policy":      taskGitPolicy,
+				"effective_git_policy": effectiveGitPolicy,
+				"has_baseline_ref":     hasBaselineRef,
+				"has_produced_ref":     hasCurrentProducedRef,
+				"message":              "Git-first execution requires a baseline ref and a produced ref linked during the current attempt before completion.",
+			})
+			return
+		}
+	}
 
 	_, err = tx.ExecContext(r.Context(), `
 		UPDATE tasks
@@ -624,13 +648,14 @@ func (s *server) failTask(w http.ResponseWriter, r *http.Request, taskID int64) 
 type activeClaim struct {
 	ID        int64
 	AttemptNo int
+	ClaimedAt time.Time
 }
 
 // getActiveClaim fetches the current active lease for an agent-task pair.
 func getActiveClaim(ctx context.Context, tx *sql.Tx, taskID int64, agentID, claimToken string) (activeClaim, error) {
 	var claim activeClaim
 	err := tx.QueryRowContext(ctx, `
-		SELECT id, attempt_no
+		SELECT id, attempt_no, claimed_at
 		FROM task_claims
 		WHERE task_id = $1
 		  AND claimed_by_id = $2
@@ -639,7 +664,7 @@ func getActiveClaim(ctx context.Context, tx *sql.Tx, taskID int64, agentID, clai
 		  AND lease_until > NOW()
 		ORDER BY claimed_at DESC
 		LIMIT 1
-		FOR UPDATE`, taskID, agentID, claimToken).Scan(&claim.ID, &claim.AttemptNo)
+		FOR UPDATE`, taskID, agentID, claimToken).Scan(&claim.ID, &claim.AttemptNo, &claim.ClaimedAt)
 	if err != nil {
 		return activeClaim{}, err
 	}
@@ -804,15 +829,75 @@ func validateResultMarkdown(resultMD string) error {
 	return nil
 }
 
+func resolveTaskGitPolicyTx(ctx context.Context, tx *sql.Tx, taskID int64) (string, string, string, error) {
+	var projectPolicy, taskPolicy string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT p.git_policy, t.git_policy
+		FROM tasks t
+		JOIN projects p ON p.id = t.project_id
+		WHERE t.id = $1`, taskID).Scan(&projectPolicy, &taskPolicy); err != nil {
+		return "", "", "", err
+	}
+	effective := projectPolicy
+	switch taskPolicy {
+	case "required":
+		effective = "required"
+	case "not_required":
+		effective = "optional"
+	}
+	return projectPolicy, taskPolicy, effective, nil
+}
+
+func (s *server) fetchProjectAndEffectiveGitPolicy(ctx context.Context, projectID int64, taskPolicy string) (string, string, error) {
+	var projectPolicy string
+	if err := s.db.QueryRowContext(ctx, `SELECT git_policy FROM projects WHERE id = $1`, projectID).Scan(&projectPolicy); err != nil {
+		return "", "", err
+	}
+	effective := projectPolicy
+	switch taskPolicy {
+	case "required":
+		effective = "required"
+	case "not_required":
+		effective = "optional"
+	}
+	return projectPolicy, effective, nil
+}
+
+func validateGitPolicyCompletionTx(ctx context.Context, tx *sql.Tx, taskID int64, claimedAt time.Time) (bool, bool, error) {
+	var hasBaselineRef bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM task_git_refs
+			WHERE task_id = $1
+			  AND ref_kind = 'baseline'
+		)`, taskID).Scan(&hasBaselineRef); err != nil {
+		return false, false, err
+	}
+
+	var hasCurrentProducedRef bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM task_git_refs
+			WHERE task_id = $1
+			  AND ref_kind = 'produced'
+			  AND created_at >= $2
+		)`, taskID, claimedAt).Scan(&hasCurrentProducedRef); err != nil {
+		return false, false, err
+	}
+	return hasBaselineRef, hasCurrentProducedRef, nil
+}
+
 // getTaskContext handles GET /tasks/:task_id/context.
 func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID int64) {
 	var ctxOut taskContext
 
 	err := s.db.QueryRowContext(r.Context(), `
-		SELECT id, project_id, parent_task_id, title, spec_md, result_md, status, max_attempts, display_order, created_at, started_at, done_at
+		SELECT id, project_id, parent_task_id, title, spec_md, result_md, status, max_attempts, git_policy, display_order, created_at, started_at, done_at
 		FROM tasks
 		WHERE id = $1`, taskID).
-		Scan(&ctxOut.Task.ID, &ctxOut.Task.ProjectID, &ctxOut.Task.ParentID, &ctxOut.Task.Title, &ctxOut.Task.SpecMD, &ctxOut.Task.ResultMD, &ctxOut.Task.Status, &ctxOut.Task.MaxAttempts, &ctxOut.Task.DisplayOrder, &ctxOut.Task.CreatedAt, &ctxOut.Task.StartedAt, &ctxOut.Task.DoneAt)
+		Scan(&ctxOut.Task.ID, &ctxOut.Task.ProjectID, &ctxOut.Task.ParentID, &ctxOut.Task.Title, &ctxOut.Task.SpecMD, &ctxOut.Task.ResultMD, &ctxOut.Task.Status, &ctxOut.Task.MaxAttempts, &ctxOut.Task.GitPolicy, &ctxOut.Task.DisplayOrder, &ctxOut.Task.CreatedAt, &ctxOut.Task.StartedAt, &ctxOut.Task.DoneAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "task not found", http.StatusNotFound)
 		return
@@ -844,15 +929,15 @@ func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID i
 
 	parentRows, err := s.db.QueryContext(r.Context(), `
 		WITH RECURSIVE ancestors AS (
-			SELECT t.id, t.project_id, t.parent_task_id, t.title, t.spec_md, t.result_md, t.status, t.max_attempts, t.display_order, t.created_at, t.started_at, t.done_at, 0 AS depth
+			SELECT t.id, t.project_id, t.parent_task_id, t.title, t.spec_md, t.result_md, t.status, t.max_attempts, t.git_policy, t.display_order, t.created_at, t.started_at, t.done_at, 0 AS depth
 			FROM tasks t
 			WHERE t.id = (SELECT parent_task_id FROM tasks WHERE id = $1)
 			UNION ALL
-			SELECT p.id, p.project_id, p.parent_task_id, p.title, p.spec_md, p.result_md, p.status, p.max_attempts, p.display_order, p.created_at, p.started_at, p.done_at, a.depth + 1
+			SELECT p.id, p.project_id, p.parent_task_id, p.title, p.spec_md, p.result_md, p.status, p.max_attempts, p.git_policy, p.display_order, p.created_at, p.started_at, p.done_at, a.depth + 1
 			FROM tasks p
 			JOIN ancestors a ON p.id = a.parent_task_id
 		)
-		SELECT id, project_id, parent_task_id, title, spec_md, result_md, status, max_attempts, display_order, created_at, started_at, done_at
+		SELECT id, project_id, parent_task_id, title, spec_md, result_md, status, max_attempts, git_policy, display_order, created_at, started_at, done_at
 		FROM ancestors
 		ORDER BY depth DESC`, taskID)
 	if err != nil {
@@ -862,7 +947,7 @@ func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID i
 	defer parentRows.Close()
 	for parentRows.Next() {
 		var p task
-		if err := parentRows.Scan(&p.ID, &p.ProjectID, &p.ParentID, &p.Title, &p.SpecMD, &p.ResultMD, &p.Status, &p.MaxAttempts, &p.DisplayOrder, &p.CreatedAt, &p.StartedAt, &p.DoneAt); err != nil {
+		if err := parentRows.Scan(&p.ID, &p.ProjectID, &p.ParentID, &p.Title, &p.SpecMD, &p.ResultMD, &p.Status, &p.MaxAttempts, &p.GitPolicy, &p.DisplayOrder, &p.CreatedAt, &p.StartedAt, &p.DoneAt); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -916,6 +1001,12 @@ func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID i
 		}
 		ctxOut.InterruptedRuns = append(ctxOut.InterruptedRuns, run)
 	}
+	ctxOut.TaskGitPolicy = ctxOut.Task.GitPolicy
+	ctxOut.ProjectGitPolicy, ctxOut.EffectiveGitPolicy, err = s.fetchProjectAndEffectiveGitPolicy(r.Context(), ctxOut.Task.ProjectID, ctxOut.Task.GitPolicy)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	gitRows, err := s.db.QueryContext(r.Context(), `
 		SELECT id, repo, branch, base_commit, commit_sha, ref_kind, created_at
@@ -933,6 +1024,12 @@ func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID i
 		if err := gitRows.Scan(&ref.ID, &ref.Repo, &ref.Branch, &ref.BaseCommit, &ref.CommitSHA, &ref.RefKind, &ref.CreatedAt); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		if ref.RefKind == "baseline" {
+			ctxOut.HasBaselineRef = true
+		}
+		if ref.RefKind == "produced" {
+			ctxOut.HasProducedRef = true
 		}
 		ctxOut.GitRefs = append(ctxOut.GitRefs, ref)
 	}

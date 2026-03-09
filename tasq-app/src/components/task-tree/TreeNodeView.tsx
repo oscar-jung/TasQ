@@ -7,6 +7,7 @@ export type TaskNode = {
   result_md: string
   status: 'planned' | 'in_progress' | 'done' | 'failed'
   max_attempts: number
+  git_policy: 'inherit' | 'required' | 'not_required'
   display_order: number
   children: TaskNode[]
 }

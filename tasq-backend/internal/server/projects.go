@@ -20,14 +20,15 @@ func (s *server) createProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
+	req.GitPolicy = normalizeProjectGitPolicy(req.GitPolicy)
 
 	var p project
 	err := s.db.QueryRowContext(r.Context(), `
-		INSERT INTO projects(name, description)
-		VALUES ($1, $2)
-		RETURNING id, name, description, created_at`,
-		req.Name, req.Description,
-	).Scan(&p.ID, &p.Name, &p.Description, &p.CreatedAt)
+		INSERT INTO projects(name, description, git_policy)
+		VALUES ($1, $2, $3)
+		RETURNING id, name, description, git_policy, created_at`,
+		req.Name, req.Description, req.GitPolicy,
+	).Scan(&p.ID, &p.Name, &p.Description, &p.GitPolicy, &p.CreatedAt)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -43,16 +44,32 @@ func (s *server) updateProject(w http.ResponseWriter, r *http.Request, projectID
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	if strings.TrimSpace(req.Name) == "" {
-		http.Error(w, "name is required", http.StatusBadRequest)
+	if req.Name == nil && req.GitPolicy == nil {
+		http.Error(w, "nothing to update", http.StatusBadRequest)
 		return
+	}
+	var (
+		nameValue *string
+		gitPolicy string
+	)
+	if req.Name != nil {
+		trimmed := strings.TrimSpace(*req.Name)
+		if trimmed == "" {
+			http.Error(w, "name must not be empty", http.StatusBadRequest)
+			return
+		}
+		nameValue = &trimmed
+	}
+	if req.GitPolicy != nil {
+		gitPolicy = normalizeProjectGitPolicy(*req.GitPolicy)
 	}
 
 	res, err := s.db.ExecContext(r.Context(), `
 		UPDATE projects
-		SET name = $2,
+		SET name = COALESCE($2, name),
+			git_policy = CASE WHEN $3 = '' THEN git_policy ELSE $3 END,
 			updated_at = NOW()
-		WHERE id = $1`, projectID, req.Name)
+		WHERE id = $1`, projectID, nameValue, gitPolicy)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -93,7 +110,7 @@ func (s *server) deleteProject(w http.ResponseWriter, r *http.Request, projectID
 // listProjects handles GET /projects.
 func (s *server) listProjects(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.QueryContext(r.Context(), `
-		SELECT id, name, description, created_at
+		SELECT id, name, description, git_policy, created_at
 		FROM projects
 		ORDER BY created_at ASC`)
 	if err != nil {
@@ -106,7 +123,7 @@ func (s *server) listProjects(w http.ResponseWriter, r *http.Request) {
 	actor := actorFromContext(r.Context())
 	for rows.Next() {
 		var p project
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.GitPolicy, &p.CreatedAt); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -141,7 +158,7 @@ func (s *server) getProjectTaskTree(w http.ResponseWriter, r *http.Request, proj
 // fetchProjectTasks loads all tasks in a project with stable ordering.
 func (s *server) fetchProjectTasks(ctx context.Context, projectID int64) ([]task, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, project_id, parent_task_id, title, spec_md, result_md, status, max_attempts, display_order, created_at, started_at, done_at
+		SELECT id, project_id, parent_task_id, title, spec_md, result_md, status, max_attempts, git_policy, display_order, created_at, started_at, done_at
 		FROM tasks
 		WHERE project_id = $1
 		ORDER BY display_order ASC, created_at ASC`, projectID)
@@ -153,7 +170,7 @@ func (s *server) fetchProjectTasks(ctx context.Context, projectID int64) ([]task
 	out := make([]task, 0)
 	for rows.Next() {
 		var t task
-		if err := rows.Scan(&t.ID, &t.ProjectID, &t.ParentID, &t.Title, &t.SpecMD, &t.ResultMD, &t.Status, &t.MaxAttempts, &t.DisplayOrder, &t.CreatedAt, &t.StartedAt, &t.DoneAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.ProjectID, &t.ParentID, &t.Title, &t.SpecMD, &t.ResultMD, &t.Status, &t.MaxAttempts, &t.GitPolicy, &t.DisplayOrder, &t.CreatedAt, &t.StartedAt, &t.DoneAt); err != nil {
 			return nil, err
 		}
 		out = append(out, t)

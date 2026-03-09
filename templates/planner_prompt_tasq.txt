@@ -5,6 +5,7 @@ Create a project and actionable task tree for:
 
 Rules:
 - Use TasQ MCP tools to create one project, root tasks, child tasks, and dependency edges.
+- For agent-driven code projects, create the project with `git_policy="required"` unless there is a concrete reason not to.
 - Keep tasks small enough for one focused worker run.
 - Use required_capabilities sparingly.
 - Keep at least one root task immediately claimable by a generic worker.
@@ -22,6 +23,10 @@ Rules:
   - the actual numeric project_id
   - the absolute workspace path
   - the worker capability split that matches the task plan
+- For code tasks in a git-required project, ensure workers are instructed to link:
+  - `baseline` before editing
+  - `rerun_branch` when branching for reruns
+  - `produced` after the task result is committed
 
 Output at the end:
 - project_id

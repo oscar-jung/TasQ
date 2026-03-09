@@ -215,6 +215,7 @@ Rules:
 - If work may take longer than 60 seconds, send tasq_heartbeat before lease expiry.
 - 의미 있는 중간 단계가 끝났거나 위험한 수정/테스트 직전에는 checkpoint note도 남겨.
 - task context에 `interrupted_runs`가 있으면, 편집 전에 가장 최근 interruption reason과 resume hint를 먼저 확인해.
+- task context에 `effective_git_policy="required"`가 있으면, 편집 전에 `baseline` git ref를 먼저 링크하고 현재 attempt에서 새 `produced` ref를 남기기 전에는 complete 하지 마.
 - If claim returns no task, stop cleanly.
 - Finish with tasq_complete_task or tasq_fail_task.
 - Include result_payload_version="v2" with summary, changes, paths, commands, tests, artifacts, next_risks.

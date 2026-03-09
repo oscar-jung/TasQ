@@ -15,10 +15,15 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
 - `POST /projects`
   - Handler: `(*server).createProject` in `internal/server/projects.go`
   - Purpose: create a new project.
+  - Optional body field:
+    - `git_policy`: `optional` or `required`
 
 - `PATCH /projects/:project_id`
   - Handler: `(*server).updateProject` in `internal/server/projects.go`
   - Purpose: rename/update project metadata.
+  - Optional body fields:
+    - `name`
+    - `git_policy`
 
 - `DELETE /projects/:project_id`
   - Handler: `(*server).deleteProject` in `internal/server/projects.go`
@@ -36,6 +41,8 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
 - `POST /projects/:project_id/tasks`
   - Handler: `(*server).createTask` in `internal/server/tasks.go`
   - Purpose: create a root/child task.
+  - Optional body fields:
+    - `git_policy`: `inherit`, `required`, or `not_required`
 
 - `POST /projects/:project_id/tasks/validate`
   - Handler: `(*server).validateProjectTree` in `internal/server/tree_guard.go`
@@ -100,7 +107,7 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
 
 - `PATCH /tasks/:task_id/execution-policy`
   - Handler: `(*server).updateTaskExecutionPolicy` in `internal/server/tasks.go`
-  - Purpose: update task execution policy (`max_attempts`).
+  - Purpose: update task execution policy (`max_attempts`, `git_policy`).
 
 - `PATCH /tasks/:task_id/capabilities`
   - Handler: `(*server).updateTaskCapabilities` in `internal/server/tasks.go`
@@ -140,6 +147,11 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
     - `recent_runs`
     - `interrupted_runs` (recent released runs with resume hints and optional checkpoint note)
     - `git_refs`
+    - `project_git_policy`
+    - `task_git_policy`
+    - `effective_git_policy`
+    - `has_baseline_ref`
+    - `has_produced_ref`
 
 - `GET /tasks/:task_id/events?limit=50`
   - Handler: `(*server).listTaskEvents` in `internal/server/events.go`
@@ -183,6 +195,9 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
       - `## Changes`
       - `## Verification`
       - `## Risks`
+  - If effective git policy is `required`, completion is rejected until:
+    - at least one `baseline` ref exists on the task
+    - at least one `produced` ref has been linked during the current attempt
 
 - `POST /tasks/:task_id/fail`
   - Handler: `(*server).failTask` in `internal/server/agents.go`

@@ -229,6 +229,7 @@ Rules:
 - If this session restarts after interruption, do not assume the prior claim is still valid. Claim fresh work from TasQ.
 - If claim returns no task, exit cleanly.
 - Keep the result payload factual and concise.
+- If task context reports effective_git_policy="required", link a baseline ref before editing and do not complete until a produced ref exists for the current attempt.
 - When linking git refs, classify them explicitly:
   - baseline
   - rerun_branch
@@ -239,11 +240,11 @@ Loop:
 1) Call tasq_claim_next with project_id=${PROJECT_ID}, agent_id=${agent_id}, lease_seconds=${LEASE_SECONDS}, capabilities=${capabilities_json}.
 2) If no task is returned, stop.
 3) Call tasq_get_task_context for the claimed task.
-4) Implement exactly what the task spec requires in the current workspace.
+4) If effective_git_policy="required", link a baseline ref before editing. Then implement exactly what the task spec requires in the current workspace.
 5) Run verification or tests that match the task scope.
 6) Send tasq_heartbeat periodically while work is in progress.
 7) Save tasq_save_checkpoint notes when progress reaches a meaningful checkpoint.
-8) If success, call tasq_complete_task with result_md and result_payload_version="v2".
+8) If success, ensure a produced git ref is linked when git policy is required, then call tasq_complete_task with result_md and result_payload_version="v2".
 9) If failure, call tasq_fail_task with reason and result_payload_version="v2".
 10) For reruns, prefer a fresh branch and call tasq_link_git_ref with explicit ref_kind values:
     - baseline for the branch point commit

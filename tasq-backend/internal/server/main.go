@@ -24,6 +24,7 @@ type project struct {
 	ID          int64     `json:"id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
+	GitPolicy   string    `json:"git_policy"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
@@ -36,6 +37,7 @@ type task struct {
 	ResultMD     string     `json:"result_md"`
 	Status       string     `json:"status"`
 	MaxAttempts  int        `json:"max_attempts"`
+	GitPolicy    string     `json:"git_policy"`
 	DisplayOrder int64      `json:"display_order"`
 	CreatedAt    time.Time  `json:"created_at"`
 	StartedAt    *time.Time `json:"started_at"`
@@ -57,10 +59,12 @@ type taskDependency struct {
 type createProjectReq struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	GitPolicy   string `json:"git_policy"`
 }
 
 type updateProjectReq struct {
-	Name string `json:"name"`
+	Name      *string `json:"name"`
+	GitPolicy *string `json:"git_policy"`
 }
 
 type createTaskReq struct {
@@ -68,6 +72,7 @@ type createTaskReq struct {
 	Title                string   `json:"title"`
 	SpecMD               string   `json:"spec_md"`
 	MaxAttempts          *int     `json:"max_attempts"`
+	GitPolicy            string   `json:"git_policy"`
 	RequiredCapabilities []string `json:"required_capabilities"`
 }
 
@@ -144,7 +149,8 @@ type deleteTaskReq struct {
 }
 
 type updateTaskExecutionPolicyReq struct {
-	MaxAttempts int `json:"max_attempts"`
+	MaxAttempts int    `json:"max_attempts"`
+	GitPolicy   string `json:"git_policy"`
 }
 
 type updateTaskCapabilitiesReq struct {
@@ -172,12 +178,17 @@ type contextDependency struct {
 }
 
 type taskContext struct {
-	Task            task                    `json:"task"`
-	Dependencies    []contextDependency     `json:"dependencies"`
-	ParentChain     []task                  `json:"parent_chain"`
-	RecentRuns      []taskRunSummary        `json:"recent_runs"`
-	InterruptedRuns []interruptedRunSummary `json:"interrupted_runs"`
-	GitRefs         []taskGitRefSummary     `json:"git_refs"`
+	Task               task                    `json:"task"`
+	Dependencies       []contextDependency     `json:"dependencies"`
+	ParentChain        []task                  `json:"parent_chain"`
+	RecentRuns         []taskRunSummary        `json:"recent_runs"`
+	InterruptedRuns    []interruptedRunSummary `json:"interrupted_runs"`
+	GitRefs            []taskGitRefSummary     `json:"git_refs"`
+	ProjectGitPolicy   string                  `json:"project_git_policy"`
+	TaskGitPolicy      string                  `json:"task_git_policy"`
+	EffectiveGitPolicy string                  `json:"effective_git_policy"`
+	HasBaselineRef     bool                    `json:"has_baseline_ref"`
+	HasProducedRef     bool                    `json:"has_produced_ref"`
 }
 
 type taskRunSummary struct {
