@@ -136,6 +136,7 @@ If the planner did not generate `workers.json`, you can bootstrap one manually f
 Spawner behavior:
 - starts one `codex exec` worker session per worker spec
 - supervises queue progress via `GET /projects/:id/runtime-alerts`
+- reports `claimed` separately from `claimable` so a planned task already held by another active worker is not mistaken for a queue bug
 - respawns workers only while useful work may still progress
 - stops immediately when any task has exhausted `max_attempts`
 - refuses to start when `plan_state` is not `approved`

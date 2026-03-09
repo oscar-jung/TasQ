@@ -60,6 +60,8 @@ cat tasq_backup.sql | docker compose exec -T db psql -U tasq -d tasq
    - `/projects/:id/events`
 6. Check runtime alerts:
    - `/projects/:id/runtime-alerts`
+   - `claimable_tasks = 0` with `claimed_planned_tasks > 0` means remaining planned work is already reserved by an active claim.
+   - `claimable_tasks = 0` with `blocked_planned_tasks > 0` means parent/dependency topology is still blocking progress.
 7. If `runtime-alerts.exhausted_tasks` is non-empty:
    - the queue will not assign those tasks again
    - treat this as human-action-required, not an auto-retry case

@@ -89,7 +89,11 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
 
 - `GET /projects/:project_id/runtime-alerts?heartbeat_stale_seconds=300`
   - Handler: `(*server).getProjectRuntimeAlerts` in `internal/server/runtime_ops.go`
-  - Purpose: runtime health view for stale claims, heartbeat-overdue claims, and orphan in-progress tasks.
+  - Purpose: runtime health view for stale claims, heartbeat-overdue claims, orphan in-progress tasks, and queue visibility.
+  - Key counters:
+    - `claimable_tasks`: structurally ready planned tasks that are not actively claimed.
+    - `claimed_planned_tasks`: planned tasks that are already reserved by a healthy active claim.
+    - `blocked_planned_tasks`: planned tasks still waiting on parent or predecessor completion.
 
 ## Task Dependencies
 - `POST /tasks/:task_id/dependencies`

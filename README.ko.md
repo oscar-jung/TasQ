@@ -135,6 +135,7 @@ SSE 이벤트 타입:
 스포너 동작:
 - worker spec마다 `codex exec` 워커 세션 1개씩 실행
 - `GET /projects/:id/runtime-alerts`로 큐 진행 상황 감독
+- `claimable`과 별도로 `claimed`를 표시해서, 이미 다른 active worker가 잡고 있는 planned task를 큐 버그로 오해하지 않도록 함
 - 아직 진행 가능한 일이 있을 때만 워커 재기동
 - 어떤 태스크든 `max_attempts`를 소진하면 즉시 중단
 - `plan_state`가 `approved`가 아니면 시작하지 않음

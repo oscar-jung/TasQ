@@ -146,6 +146,7 @@ type RuntimeAlertsResponse = {
   done_tasks: number
   unfinished_tasks: number
   claimable_tasks: number
+  claimed_planned_tasks: number
   blocked_planned_tasks: number
   stale_active_claims: RuntimeClaimAlert[]
   heartbeat_overdue_claims: RuntimeClaimAlert[]
@@ -1188,6 +1189,7 @@ export function App() {
       done_tasks: Number(raw.done_tasks) || 0,
       unfinished_tasks: Number(raw.unfinished_tasks) || 0,
       claimable_tasks: Number(raw.claimable_tasks) || 0,
+      claimed_planned_tasks: Number((raw as RuntimeAlertsResponse).claimed_planned_tasks) || 0,
       blocked_planned_tasks: Number(raw.blocked_planned_tasks) || 0,
       stale_active_claims: Array.isArray(raw.stale_active_claims) ? raw.stale_active_claims : [],
       heartbeat_overdue_claims: Array.isArray(raw.heartbeat_overdue_claims) ? raw.heartbeat_overdue_claims : [],
@@ -2852,7 +2854,7 @@ export function App() {
                                     {runtimeAlerts.done_tasks}/{runtimeAlerts.total_tasks} done
                                   </p>
                                   <p className="text-[11px] text-muted-foreground">
-                                    {runtimeAlerts.claimable_tasks} claimable · {runtimeAlerts.blocked_planned_tasks} blocked
+                                    {runtimeAlerts.claimable_tasks} claimable · {runtimeAlerts.claimed_planned_tasks} claimed · {runtimeAlerts.blocked_planned_tasks} blocked
                                   </p>
                                 </div>
                                 <div className="rounded border border-border/60 bg-background/60 p-1.5">

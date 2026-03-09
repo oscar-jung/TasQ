@@ -38,6 +38,7 @@ type runtimeAlertsReport struct {
 	DoneTasks              int                  `json:"done_tasks"`
 	UnfinishedTasks        int                  `json:"unfinished_tasks"`
 	ClaimableTasks         int                  `json:"claimable_tasks"`
+	ClaimedPlannedTasks    int                  `json:"claimed_planned_tasks"`
 	BlockedPlannedTasks    int                  `json:"blocked_planned_tasks"`
 	StaleActiveClaims      []runtimeClaimAlert  `json:"stale_active_claims"`
 	HeartbeatOverdueClaims []runtimeClaimAlert  `json:"heartbeat_overdue_claims"`
@@ -118,6 +119,7 @@ func (s *server) getProjectRuntimeAlerts(w http.ResponseWriter, r *http.Request,
 		DoneTasks:              0,
 		UnfinishedTasks:        0,
 		ClaimableTasks:         0,
+		ClaimedPlannedTasks:    0,
 		BlockedPlannedTasks:    0,
 		StaleActiveClaims:      []runtimeClaimAlert{},
 		HeartbeatOverdueClaims: []runtimeClaimAlert{},
@@ -185,7 +187,24 @@ func (s *server) getProjectRuntimeAlerts(w http.ResponseWriter, r *http.Request,
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	report.BlockedPlannedTasks = plannedTasks - report.ClaimableTasks - exhaustedPlannedTasks
+	if err := s.db.QueryRowContext(r.Context(), `
+		SELECT COUNT(1)
+		FROM tasks t
+		WHERE t.project_id = $1
+		  AND t.status = 'planned'
+		  AND EXISTS (
+			SELECT 1
+			FROM task_claims c
+			WHERE c.task_id = t.id
+			  AND c.status = 'active'
+			  AND c.lease_until > NOW()
+		  )`, projectID).
+		Scan(&report.ClaimedPlannedTasks); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	report.BlockedPlannedTasks = plannedTasks - report.ClaimableTasks - exhaustedPlannedTasks - report.ClaimedPlannedTasks
 	if report.BlockedPlannedTasks < 0 {
 		report.BlockedPlannedTasks = 0
 	}

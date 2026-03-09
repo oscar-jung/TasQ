@@ -159,14 +159,15 @@ sleep_with_spinner() {
 
 print_runtime_summary() {
   local runtime_json="$1"
-  local total done unfinished claimable blocked exhausted
+  local total done unfinished claimable claimed blocked exhausted
   total="$(echo "${runtime_json}" | jq -r '.total_tasks')"
   done="$(echo "${runtime_json}" | jq -r '.done_tasks')"
   unfinished="$(echo "${runtime_json}" | jq -r '.unfinished_tasks')"
   claimable="$(echo "${runtime_json}" | jq -r '.claimable_tasks')"
+  claimed="$(echo "${runtime_json}" | jq -r '.claimed_planned_tasks // 0')"
   blocked="$(echo "${runtime_json}" | jq -r '.blocked_planned_tasks')"
   exhausted="$(echo "${runtime_json}" | jq -r '.exhausted_tasks | length')"
-  echo "[runtime] total=${total} done=${done} unfinished=${unfinished} claimable=${claimable} blocked=${blocked} exhausted=${exhausted}"
+  echo "[runtime] total=${total} done=${done} unfinished=${unfinished} claimable=${claimable} claimed=${claimed} blocked=${blocked} exhausted=${exhausted}"
 }
 
 fetch_tasks_json() {
@@ -176,9 +177,9 @@ fetch_tasks_json() {
 print_progress_snapshot() {
   local runtime_json="$1"
   local tasks_json="$2"
-  local summary active_titles done_ids newly_done active_count claimable blocked
+  local summary active_titles done_ids newly_done active_count claimable claimed blocked
 
-  summary="$(echo "${runtime_json}" | jq -r '[.total_tasks, .done_tasks, .unfinished_tasks, .claimable_tasks, .blocked_planned_tasks, (.exhausted_tasks|length)] | @tsv')"
+  summary="$(echo "${runtime_json}" | jq -r '[.total_tasks, .done_tasks, .unfinished_tasks, .claimable_tasks, (.claimed_planned_tasks // 0), .blocked_planned_tasks, (.exhausted_tasks|length)] | @tsv')"
   if [[ "${summary}" == "${PREV_RUNTIME_SUMMARY}" ]]; then
     return
   fi
@@ -189,6 +190,7 @@ print_progress_snapshot() {
   active_titles="$(echo "${tasks_json}" | jq -r '[.[] | select(.status == "in_progress") | "T#\(.id) \(.title)"] | join(" | ")')"
   active_count="$(echo "${tasks_json}" | jq -r '[.[] | select(.status == "in_progress")] | length')"
   claimable="$(echo "${runtime_json}" | jq -r '.claimable_tasks')"
+  claimed="$(echo "${runtime_json}" | jq -r '.claimed_planned_tasks // 0')"
   blocked="$(echo "${runtime_json}" | jq -r '.blocked_planned_tasks')"
 
   if [[ "${active_count}" -gt 0 ]]; then
@@ -209,6 +211,8 @@ print_progress_snapshot() {
 
   if [[ "${claimable}" -eq 0 && "${active_count}" -gt 0 ]]; then
     echo "[wait] no parallel claimable task right now; other work is blocked behind active task completion"
+  elif [[ "${claimable}" -eq 0 && "${claimed}" -gt 0 ]]; then
+    echo "[claimed] ${claimed} planned task(s) are already reserved by active claims"
   elif [[ "${claimable}" -gt 0 ]]; then
     echo "[ready] ${claimable} task(s) are currently claimable"
   elif [[ "${blocked}" -gt 0 ]]; then
