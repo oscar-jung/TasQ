@@ -74,10 +74,31 @@ codex mcp add tasq-http --url http://localhost:8091/mcp
 
 ## Runtime monitoring
 - Project list badge (left panel):
-  - number = `stale claims + heartbeat overdue + orphan in-progress`
+  - number = `stale claims + heartbeat overdue + orphan in-progress + exhausted tasks`
 - Task detail panel:
   - `Execution > Runtime Alerts` shows detailed alert lists.
   - You can change heartbeat threshold and refresh manually.
+  - Queue summary includes `done/total`, `claimable`, `blocked`, and `exhausted`.
+
+## Worker supervisor
+Planner sessions should emit a worker spawn spec JSON file and then launch:
+
+```bash
+./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
+```
+
+Spawner behavior:
+- starts one `codex exec` worker session per worker spec
+- supervises queue progress via `GET /projects/:id/runtime-alerts`
+- respawns workers only while useful work may still progress
+- stops immediately when any task has exhausted `max_attempts`
+
+Why stop on `max_attempts` exhaustion:
+- TasQ uses at-least-once execution semantics
+- a restarted worker may safely re-claim unfinished work
+- but once a task reaches `max_attempts`, the queue intentionally refuses further claims
+- automatic respawn would only churn without unblocking the project
+- exhausted tasks therefore require human review: adjust the task, raise `max_attempts`, or fix the underlying failure
 
 ## Agent runtime demo
 ```bash

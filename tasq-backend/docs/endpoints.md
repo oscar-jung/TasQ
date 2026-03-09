@@ -20,6 +20,10 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
   - Handler: `(*server).updateProject` in `internal/server/projects.go`
   - Purpose: rename/update project metadata.
 
+- `DELETE /projects/:project_id`
+  - Handler: `(*server).deleteProject` in `internal/server/projects.go`
+  - Purpose: delete a project and all cascaded task/runtime data.
+
 ## Project Task Views
 - `GET /projects/:project_id/tasks`
   - Handler: `(*server).listProjectTasks` in `internal/server/projects.go`

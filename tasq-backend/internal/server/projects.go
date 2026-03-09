@@ -65,6 +65,24 @@ func (s *server) updateProject(w http.ResponseWriter, r *http.Request, projectID
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// deleteProject handles DELETE /projects/:project_id.
+func (s *server) deleteProject(w http.ResponseWriter, r *http.Request, projectID int64) {
+	res, err := s.db.ExecContext(r.Context(), `
+		DELETE FROM projects
+		WHERE id = $1`, projectID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "project not found", http.StatusNotFound)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 // listProjects handles GET /projects.
 func (s *server) listProjects(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.QueryContext(r.Context(), `

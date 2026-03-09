@@ -23,12 +23,26 @@ type orphanTaskAlert struct {
 	StartedAt *time.Time `json:"started_at"`
 }
 
+type exhaustedTaskAlert struct {
+	TaskID       int64  `json:"task_id"`
+	Title        string `json:"title"`
+	Status       string `json:"status"`
+	AttemptsUsed int    `json:"attempts_used"`
+	MaxAttempts  int    `json:"max_attempts"`
+}
+
 type runtimeAlertsReport struct {
-	ProjectID              int64               `json:"project_id"`
-	HeartbeatStaleSeconds  int                 `json:"heartbeat_stale_seconds"`
-	StaleActiveClaims      []runtimeClaimAlert `json:"stale_active_claims"`
-	HeartbeatOverdueClaims []runtimeClaimAlert `json:"heartbeat_overdue_claims"`
-	OrphanInProgressTasks  []orphanTaskAlert   `json:"orphan_in_progress_tasks"`
+	ProjectID              int64                `json:"project_id"`
+	HeartbeatStaleSeconds  int                  `json:"heartbeat_stale_seconds"`
+	TotalTasks             int                  `json:"total_tasks"`
+	DoneTasks              int                  `json:"done_tasks"`
+	UnfinishedTasks        int                  `json:"unfinished_tasks"`
+	ClaimableTasks         int                  `json:"claimable_tasks"`
+	BlockedPlannedTasks    int                  `json:"blocked_planned_tasks"`
+	StaleActiveClaims      []runtimeClaimAlert  `json:"stale_active_claims"`
+	HeartbeatOverdueClaims []runtimeClaimAlert  `json:"heartbeat_overdue_claims"`
+	OrphanInProgressTasks  []orphanTaskAlert    `json:"orphan_in_progress_tasks"`
+	ExhaustedTasks         []exhaustedTaskAlert `json:"exhausted_tasks"`
 }
 
 func (s *server) runClaimReconciler(interval time.Duration) {
@@ -100,9 +114,80 @@ func (s *server) getProjectRuntimeAlerts(w http.ResponseWriter, r *http.Request,
 	report := runtimeAlertsReport{
 		ProjectID:              projectID,
 		HeartbeatStaleSeconds:  staleSec,
+		TotalTasks:             0,
+		DoneTasks:              0,
+		UnfinishedTasks:        0,
+		ClaimableTasks:         0,
+		BlockedPlannedTasks:    0,
 		StaleActiveClaims:      []runtimeClaimAlert{},
 		HeartbeatOverdueClaims: []runtimeClaimAlert{},
 		OrphanInProgressTasks:  []orphanTaskAlert{},
+		ExhaustedTasks:         []exhaustedTaskAlert{},
+	}
+
+	var plannedTasks int
+	var exhaustedPlannedTasks int
+	if err := s.db.QueryRowContext(r.Context(), `
+		SELECT
+			COUNT(1) AS total_tasks,
+			COUNT(1) FILTER (WHERE status = 'done') AS done_tasks,
+			COUNT(1) FILTER (WHERE status <> 'done') AS unfinished_tasks,
+			COUNT(1) FILTER (WHERE status = 'planned') AS planned_tasks,
+			COUNT(1) FILTER (
+				WHERE status = 'planned'
+				  AND (
+					SELECT COUNT(1)
+					FROM task_claims c
+					WHERE c.task_id = tasks.id
+				  ) >= max_attempts
+			) AS exhausted_planned_tasks
+		FROM tasks
+		WHERE project_id = $1`, projectID).
+		Scan(&report.TotalTasks, &report.DoneTasks, &report.UnfinishedTasks, &plannedTasks, &exhaustedPlannedTasks); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := s.db.QueryRowContext(r.Context(), `
+		SELECT COUNT(1)
+		FROM tasks t
+		WHERE t.project_id = $1
+		  AND t.status = 'planned'
+		  AND (
+			t.parent_task_id IS NULL
+			OR EXISTS (
+				SELECT 1
+				FROM tasks parent
+				WHERE parent.id = t.parent_task_id
+				  AND parent.status = 'done'
+			)
+		  )
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM task_claims c
+			WHERE c.task_id = t.id
+			  AND c.status = 'active'
+			  AND c.lease_until > NOW()
+		  )
+		  AND (
+			SELECT COUNT(1)
+			FROM task_claims c
+			WHERE c.task_id = t.id
+		  ) < t.max_attempts
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM task_dependencies td
+			JOIN tasks p ON p.id = td.predecessor_task_id
+			WHERE td.successor_task_id = t.id
+			  AND p.status <> 'done'
+		  )`, projectID).
+		Scan(&report.ClaimableTasks); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	report.BlockedPlannedTasks = plannedTasks - report.ClaimableTasks - exhaustedPlannedTasks
+	if report.BlockedPlannedTasks < 0 {
+		report.BlockedPlannedTasks = 0
 	}
 
 	staleRows, err := s.db.QueryContext(r.Context(), `
@@ -190,6 +275,30 @@ func (s *server) getProjectRuntimeAlerts(w http.ResponseWriter, r *http.Request,
 		report.OrphanInProgressTasks = append(report.OrphanInProgressTasks, alert)
 	}
 	orphanRows.Close()
+
+	exhaustedRows, err := s.db.QueryContext(r.Context(), `
+		SELECT t.id, t.title, t.status, COUNT(c.id) AS attempts_used, t.max_attempts
+		FROM tasks t
+		LEFT JOIN task_claims c ON c.task_id = t.id
+		WHERE t.project_id = $1
+		  AND t.status <> 'done'
+		GROUP BY t.id, t.title, t.status, t.max_attempts
+		HAVING COUNT(c.id) >= t.max_attempts
+		ORDER BY t.created_at ASC, t.id ASC`, projectID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for exhaustedRows.Next() {
+		var alert exhaustedTaskAlert
+		if err := exhaustedRows.Scan(&alert.TaskID, &alert.Title, &alert.Status, &alert.AttemptsUsed, &alert.MaxAttempts); err != nil {
+			exhaustedRows.Close()
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		report.ExhaustedTasks = append(report.ExhaustedTasks, alert)
+	}
+	exhaustedRows.Close()
 
 	writeJSON(w, http.StatusOK, report)
 }

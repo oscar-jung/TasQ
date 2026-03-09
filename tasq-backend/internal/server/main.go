@@ -321,6 +321,13 @@ func (s *server) projectsSubrouter(w http.ResponseWriter, r *http.Request) {
 		s.updateProject(w, r, projectID)
 		return
 	}
+	if len(parts) == 1 && r.Method == http.MethodDelete {
+		if !s.requireProjectAccess(w, r, projectID, "task:admin", true) {
+			return
+		}
+		s.deleteProject(w, r, projectID)
+		return
+	}
 	if len(parts) < 2 {
 		http.NotFound(w, r)
 		return

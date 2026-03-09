@@ -47,6 +47,10 @@ cat tasq_backup.sql | docker compose exec -T db psql -U tasq -d tasq
    - `/projects/:id/events`
 6. Check runtime alerts:
    - `/projects/:id/runtime-alerts`
+7. If `runtime-alerts.exhausted_tasks` is non-empty:
+   - the queue will not assign those tasks again
+   - treat this as human-action-required, not an auto-retry case
+   - fix the task definition, underlying implementation issue, or raise `max_attempts`
 
 ### 3) Reclaim behavior check
 - Run smoke:

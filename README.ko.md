@@ -73,10 +73,31 @@ codex mcp add tasq-http --url http://localhost:8091/mcp
 
 ## 런타임 모니터링
 - 좌측 프로젝트 배지:
-  - 값 = `stale claims + heartbeat overdue + orphan in-progress`
+  - 값 = `stale claims + heartbeat overdue + orphan in-progress + exhausted tasks`
 - 우측 Task Detail:
   - `Execution > Runtime Alerts`에서 상세 목록 확인
   - heartbeat 기준값 조정 후 수동 refresh 가능
+  - 큐 요약(`done/total`, `claimable`, `blocked`, `exhausted`) 제공
+
+## 워커 스포너
+플래너 세션은 worker spawn spec JSON 파일을 만들고, 이후 아래 스크립트를 실행하면 됩니다.
+
+```bash
+./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
+```
+
+스포너 동작:
+- worker spec마다 `codex exec` 워커 세션 1개씩 실행
+- `GET /projects/:id/runtime-alerts`로 큐 진행 상황 감독
+- 아직 진행 가능한 일이 있을 때만 워커 재기동
+- 어떤 태스크든 `max_attempts`를 소진하면 즉시 중단
+
+`max_attempts` 소진 시 즉시 멈추는 이유:
+- TasQ는 `at-least-once` 실행 모델이라 워커 재시작 자체는 허용됨
+- 끊긴 워커가 다시 떠서 unfinished task를 재-claim하는 것은 합리적임
+- 하지만 `max_attempts`를 넘긴 태스크는 큐가 의도적으로 더 이상 배정하지 않음
+- 이 상태에서 스포너가 워커만 계속 재기동하면 큐만 헛돌고 문제는 풀리지 않음
+- 따라서 이 경우는 인간이 개입해 태스크를 수정하거나, `max_attempts`를 조정하거나, 근본 원인을 해결해야 함
 
 ## 에이전트 데모 실행
 ```bash

@@ -6,7 +6,7 @@ import {
   useRef,
   useState
 } from 'react'
-import { Check, Pencil, Plus, X } from 'lucide-react'
+import { Check, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -86,18 +86,33 @@ type OrphanTaskAlert = {
   started_at: string | null
 }
 
+type ExhaustedTaskAlert = {
+  task_id: number
+  title: string
+  status: string
+  attempts_used: number
+  max_attempts: number
+}
+
 type RuntimeAlertsResponse = {
   project_id: number
   heartbeat_stale_seconds: number
+  total_tasks: number
+  done_tasks: number
+  unfinished_tasks: number
+  claimable_tasks: number
+  blocked_planned_tasks: number
   stale_active_claims: RuntimeClaimAlert[]
   heartbeat_overdue_claims: RuntimeClaimAlert[]
   orphan_in_progress_tasks: OrphanTaskAlert[]
+  exhausted_tasks: ExhaustedTaskAlert[]
 }
 
 type ProjectAlertBadge = {
   stale: number
   overdue: number
   orphan: number
+  exhausted: number
   score: number
   loading: boolean
   error: boolean
@@ -132,6 +147,23 @@ type TreeValidationReport = {
 }
 
 const apiBase = import.meta.env.VITE_API_BASE ?? 'http://localhost:8080'
+
+function buildProjectAlertBadge(data: RuntimeAlertsResponse): ProjectAlertBadge {
+  return {
+    stale: data.stale_active_claims.length,
+    overdue: data.heartbeat_overdue_claims.length,
+    orphan: data.orphan_in_progress_tasks.length,
+    exhausted: data.exhausted_tasks.length,
+    score:
+      data.stale_active_claims.length +
+      data.heartbeat_overdue_claims.length +
+      data.orphan_in_progress_tasks.length +
+      data.exhausted_tasks.length,
+    loading: false,
+    error: false
+  }
+}
+
 export function App() {
   const [projects, setProjects] = useState<Project[]>([])
   const [projectAlertBadges, setProjectAlertBadges] = useState<Record<number, ProjectAlertBadge>>({})
@@ -140,6 +172,8 @@ export function App() {
 
   const [editingProjectID, setEditingProjectID] = useState<number | null>(null)
   const [editingProjectName, setEditingProjectName] = useState('')
+  const [deleteProjectModal, setDeleteProjectModal] = useState<Project | null>(null)
+  const [isDeletingProject, setIsDeletingProject] = useState(false)
 
   const [tree, setTree] = useState<TaskNode[]>([])
   const [selectedTaskID, setSelectedTaskID] = useState<number | null>(null)
@@ -526,7 +560,9 @@ export function App() {
       setProjectAlertBadges((prev) => {
         const next: Record<number, ProjectAlertBadge> = {}
         ids.forEach((id) => {
-          next[id] = prev[id] ?? { stale: 0, overdue: 0, orphan: 0, score: 0, loading: true, error: false }
+          next[id] =
+            prev[id] ??
+            { stale: 0, overdue: 0, orphan: 0, exhausted: 0, score: 0, loading: true, error: false }
           next[id] = { ...next[id], loading: true, error: false }
         })
         return next
@@ -538,22 +574,12 @@ export function App() {
             const data = await fetchRuntimeAlerts(project.id, 300)
             return {
               id: project.id,
-              badge: {
-                stale: data.stale_active_claims.length,
-                overdue: data.heartbeat_overdue_claims.length,
-                orphan: data.orphan_in_progress_tasks.length,
-                score:
-                  data.stale_active_claims.length +
-                  data.heartbeat_overdue_claims.length +
-                  data.orphan_in_progress_tasks.length,
-                loading: false,
-                error: false
-              }
+              badge: buildProjectAlertBadge(data)
             }
           } catch {
             return {
               id: project.id,
-              badge: { stale: 0, overdue: 0, orphan: 0, score: 0, loading: false, error: true }
+              badge: { stale: 0, overdue: 0, orphan: 0, exhausted: 0, score: 0, loading: false, error: true }
             }
           }
         })
@@ -594,17 +620,7 @@ export function App() {
         setRuntimeAlerts(data)
         setProjectAlertBadges((prev) => ({
           ...prev,
-          [selectedProjectID]: {
-            stale: data.stale_active_claims.length,
-            overdue: data.heartbeat_overdue_claims.length,
-            orphan: data.orphan_in_progress_tasks.length,
-            score:
-              data.stale_active_claims.length +
-              data.heartbeat_overdue_claims.length +
-              data.orphan_in_progress_tasks.length,
-            loading: false,
-            error: false
-          }
+          [selectedProjectID]: buildProjectAlertBadge(data)
         }))
       } catch (err) {
         if (cancelled) return
@@ -613,7 +629,15 @@ export function App() {
         setRuntimeAlerts(null)
         setProjectAlertBadges((prev) => ({
           ...prev,
-          [selectedProjectID]: { stale: 0, overdue: 0, orphan: 0, score: 0, loading: false, error: true }
+          [selectedProjectID]: {
+            stale: 0,
+            overdue: 0,
+            orphan: 0,
+            exhausted: 0,
+            score: 0,
+            loading: false,
+            error: true
+          }
         }))
       } finally {
         if (!cancelled) {
@@ -699,8 +723,15 @@ export function App() {
     const res = await fetch(`${apiBase}/projects`)
     const data = (await res.json()) as Project[]
     setProjects(data)
-    if (!selectedProjectID && data.length > 0) {
+    if (data.length === 0) {
+      setSelectedProjectID(null)
+      setSelectedTaskID(null)
+      setTree([])
+      return
+    }
+    if (!selectedProjectID || !data.some((project) => project.id === selectedProjectID)) {
       setSelectedProjectID(data[0].id)
+      setSelectedTaskID(null)
     }
   }
 
@@ -787,9 +818,15 @@ export function App() {
     return {
       project_id: raw.project_id,
       heartbeat_stale_seconds: raw.heartbeat_stale_seconds,
+      total_tasks: Number(raw.total_tasks) || 0,
+      done_tasks: Number(raw.done_tasks) || 0,
+      unfinished_tasks: Number(raw.unfinished_tasks) || 0,
+      claimable_tasks: Number(raw.claimable_tasks) || 0,
+      blocked_planned_tasks: Number(raw.blocked_planned_tasks) || 0,
       stale_active_claims: Array.isArray(raw.stale_active_claims) ? raw.stale_active_claims : [],
       heartbeat_overdue_claims: Array.isArray(raw.heartbeat_overdue_claims) ? raw.heartbeat_overdue_claims : [],
-      orphan_in_progress_tasks: Array.isArray(raw.orphan_in_progress_tasks) ? raw.orphan_in_progress_tasks : []
+      orphan_in_progress_tasks: Array.isArray(raw.orphan_in_progress_tasks) ? raw.orphan_in_progress_tasks : [],
+      exhausted_tasks: Array.isArray(raw.exhausted_tasks) ? raw.exhausted_tasks : []
     }
   }
 
@@ -806,15 +843,7 @@ export function App() {
       setRuntimeAlerts(data)
       setProjectAlertBadges((prev) => ({
         ...prev,
-        [selectedProjectID]: {
-          stale: data.stale_active_claims.length,
-          overdue: data.heartbeat_overdue_claims.length,
-          orphan: data.orphan_in_progress_tasks.length,
-          score:
-            data.stale_active_claims.length + data.heartbeat_overdue_claims.length + data.orphan_in_progress_tasks.length,
-          loading: false,
-          error: false
-        }
+        [selectedProjectID]: buildProjectAlertBadge(data)
       }))
     } catch (err) {
       const message = err instanceof Error ? err.message : 'failed to refresh runtime alerts'
@@ -1022,17 +1051,7 @@ export function App() {
       setRuntimeAlerts(runtime)
       setProjectAlertBadges((prev) => ({
         ...prev,
-        [projectID]: {
-          stale: runtime.stale_active_claims.length,
-          overdue: runtime.heartbeat_overdue_claims.length,
-          orphan: runtime.orphan_in_progress_tasks.length,
-          score:
-            runtime.stale_active_claims.length +
-            runtime.heartbeat_overdue_claims.length +
-            runtime.orphan_in_progress_tasks.length,
-          loading: false,
-          error: false
-        }
+        [projectID]: buildProjectAlertBadge(runtime)
       }))
     }
   }
@@ -1098,6 +1117,42 @@ export function App() {
     })
     cancelProjectEdit()
     await fetchProjects()
+  }
+
+  function openDeleteProjectModal(project: Project) {
+    setDeleteProjectModal(project)
+  }
+
+  function closeDeleteProjectModal() {
+    if (isDeletingProject) return
+    setDeleteProjectModal(null)
+  }
+
+  async function submitDeleteProject() {
+    if (!deleteProjectModal) return
+    setIsDeletingProject(true)
+    try {
+      const res = await fetch(`${apiBase}/projects/${deleteProjectModal.id}`, {
+        method: 'DELETE'
+      })
+      if (!res.ok) {
+        const message = await res.text()
+        throw new Error(message || 'failed to delete project')
+      }
+
+      if (selectedProjectID === deleteProjectModal.id) {
+        setSelectedProjectID(null)
+        setSelectedTaskID(null)
+        setTree([])
+      }
+      closeDeleteProjectModal()
+      await fetchProjects()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'failed to delete project'
+      setTaskMessage(message)
+    } finally {
+      setIsDeletingProject(false)
+    }
   }
 
   async function createRootTask(e: FormEvent) {
@@ -1652,7 +1707,12 @@ export function App() {
                   >
                     {!isEditing && (
                       <div className="flex min-w-0 flex-1 items-center gap-2">
-                        <p className="min-w-0 flex-1 truncate text-left text-sm">{project.name}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-left text-sm">{project.name}</p>
+                          <p className="truncate text-left text-[10px] uppercase tracking-[0.22em] text-muted-foreground/80">
+                            Project #{project.id}
+                          </p>
+                        </div>
                         {badge?.loading && <span className="h-2 w-2 rounded-full bg-slate-400" />}
                         {!badge?.loading && badge?.error && <span className="h-2 w-2 rounded-full bg-rose-400" />}
                         {!badge?.loading && !badge?.error && badge && badge.score > 0 && (
@@ -1681,17 +1741,30 @@ export function App() {
                     )}
 
                     {!isEditing && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 w-7 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          startProjectEdit(project)
-                        }}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
+                      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            startProjectEdit(project)
+                          }}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-rose-200 hover:text-rose-100"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openDeleteProjectModal(project)
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     )}
                   </div>
                 )
@@ -1704,9 +1777,14 @@ export function App() {
       <Card className="h-full overflow-hidden">
         <CardHeader className="border-b border-border/80">
           <CardTitle className="font-semibold tracking-tight">Task Tree</CardTitle>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {selectedProject ? `Project: ${selectedProject.name}` : 'Select a project'}
-          </p>
+          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+            <span>{selectedProject ? `Project: ${selectedProject.name}` : 'Select a project'}</span>
+            {selectedProject && (
+              <span className="rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                ID {selectedProject.id}
+              </span>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="flex h-[calc(100%-86px)] flex-col gap-4 pt-4">
           <form onSubmit={createRootTask} className="flex items-center gap-2 overflow-x-auto rounded-md border bg-muted/20 p-2">
@@ -2021,7 +2099,16 @@ export function App() {
                       )}
                       {runtimeAlerts && (
                         <div className="mt-2 space-y-2">
-                          <div className="grid grid-cols-3 gap-2 text-xs">
+                          <div className="grid grid-cols-2 gap-2 text-xs xl:grid-cols-4">
+                            <div className="rounded border border-border/60 bg-background/60 p-1.5">
+                              <p className="text-muted-foreground">Queue</p>
+                              <p className="font-semibold">
+                                {runtimeAlerts.done_tasks}/{runtimeAlerts.total_tasks} done
+                              </p>
+                              <p className="text-[11px] text-muted-foreground">
+                                {runtimeAlerts.claimable_tasks} claimable · {runtimeAlerts.blocked_planned_tasks} blocked
+                              </p>
+                            </div>
                             <div className="rounded border border-border/60 bg-background/60 p-1.5">
                               <p className="text-muted-foreground">Stale Claims</p>
                               <p className="font-semibold">{runtimeAlerts.stale_active_claims.length}</p>
@@ -2034,9 +2121,13 @@ export function App() {
                               <p className="text-muted-foreground">Orphan In Progress</p>
                               <p className="font-semibold">{runtimeAlerts.orphan_in_progress_tasks.length}</p>
                             </div>
+                            <div className="rounded border border-border/60 bg-background/60 p-1.5">
+                              <p className="text-muted-foreground">Exhausted Tasks</p>
+                              <p className="font-semibold">{runtimeAlerts.exhausted_tasks.length}</p>
+                            </div>
                           </div>
 
-                          <div className="grid grid-cols-1 gap-2 xl:grid-cols-3">
+                          <div className="grid grid-cols-1 gap-2 xl:grid-cols-4">
                             <div className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
                               <p className="mb-1 font-medium text-foreground/90">Stale Claims</p>
                               <div className="max-h-24 space-y-1 overflow-y-auto">
@@ -2072,6 +2163,19 @@ export function App() {
                                 {runtimeAlerts.orphan_in_progress_tasks.map((item) => (
                                   <p key={item.task_id} className="text-muted-foreground">
                                     T#{item.task_id}
+                                  </p>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
+                              <p className="mb-1 font-medium text-foreground/90">Exhausted Tasks</p>
+                              <div className="max-h-24 space-y-1 overflow-y-auto">
+                                {runtimeAlerts.exhausted_tasks.length === 0 && (
+                                  <p className="text-muted-foreground">None</p>
+                                )}
+                                {runtimeAlerts.exhausted_tasks.map((item) => (
+                                  <p key={item.task_id} className="text-muted-foreground">
+                                    T#{item.task_id} {item.title} ({item.attempts_used}/{item.max_attempts})
                                   </p>
                                 ))}
                               </div>
@@ -2336,6 +2440,28 @@ export function App() {
               </Button>
               <Button type="button" variant="outline" onClick={() => void submitDeleteTask()} disabled={isDeletingTask}>
                 {isDeletingTask ? 'Deleting...' : 'Delete'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteProjectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-lg border border-border bg-card p-4 shadow-2xl">
+            <p className="text-sm font-semibold">Delete Project</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              This will permanently delete the project and all tasks, dependencies, runs, events, and git links under it.
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Target: <span className="text-foreground">{deleteProjectModal.name}</span>
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={closeDeleteProjectModal} disabled={isDeletingProject}>
+                Cancel
+              </Button>
+              <Button type="button" variant="outline" onClick={() => void submitDeleteProject()} disabled={isDeletingProject}>
+                {isDeletingProject ? 'Deleting...' : 'Delete'}
               </Button>
             </div>
           </div>

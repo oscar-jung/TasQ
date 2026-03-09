@@ -15,6 +15,9 @@ Use TasQ MCP admin tools to create:
 - dependencies for execution order
 - capability labels for specialized tasks
 Keep tasks small enough to finish in one focused work chunk.
+Use required_capabilities sparingly.
+Keep at least one root task immediately claimable by a generic worker.
+At the end, report the numeric project_id and produce a worker spawn spec JSON file.
 ```
 
 ### Required MCP tools
@@ -37,7 +40,7 @@ Loop:
 1) claim next task for your agent id and capabilities
 2) fetch task context
 3) execute task work in local repository
-4) heartbeat for long tasks
+4) heartbeat for long tasks before lease expiry
 5) complete (or fail) with result_payload v2
 6) link git refs when commits exist
 Stop when no claimable task remains.
@@ -73,3 +76,32 @@ worker-3: capabilities = ["db","migration"]
 
 Because TasQ claim APIs are lease/token based, workers can run concurrently with at-least-once semantics.
 
+## 4) Spawn spec and worker supervisor
+Planner sessions should emit a JSON file that can be consumed by `scripts/spawn_workers.sh`.
+
+Example:
+```json
+{
+  "project_id": 2,
+  "workspace": "/abs/path/to/repo",
+  "api_base": "http://localhost:8080",
+  "lease_seconds": 300,
+  "heartbeat_seconds": 60,
+  "poll_seconds": 15,
+  "workers": [
+    {"agent_id": "worker-1", "capabilities": ["go", "cli", "docs"]},
+    {"agent_id": "worker-2", "capabilities": ["go", "integration", "testing", "docs"]}
+  ]
+}
+```
+
+Then launch:
+
+```bash
+./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
+```
+
+Supervisor stop rules:
+- queue drained: exit success
+- exhausted tasks (`max_attempts` reached): stop immediately and require human intervention
+- no workers alive and nothing claimable for multiple polls: stop and surface likely capability/dependency blockage
