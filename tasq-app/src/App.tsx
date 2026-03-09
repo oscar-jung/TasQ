@@ -50,6 +50,18 @@ type TaskContextResponse = {
   git_refs: TaskGitRefSummary[]
 }
 
+type ClaimNextResponse = {
+  task: TaskNode | null
+  claim?: {
+    id: number
+    token: string
+    attempt_no: number
+    task_run_id: number
+    lease_seconds: number
+  }
+  message?: string
+}
+
 type TreeValidationReport = {
   project_id: number
   checked_tasks: number
@@ -86,6 +98,7 @@ export function App() {
   const [isSavingStatus, setIsSavingStatus] = useState(false)
   const [isSavingExecutionPolicy, setIsSavingExecutionPolicy] = useState(false)
   const [isSavingGitLink, setIsSavingGitLink] = useState(false)
+  const [isAgentActionRunning, setIsAgentActionRunning] = useState(false)
   const [taskMessage, setTaskMessage] = useState('')
   const [taskContext, setTaskContext] = useState<TaskContextResponse | null>(null)
   const [taskContextError, setTaskContextError] = useState('')
@@ -95,6 +108,10 @@ export function App() {
   const [gitBranchDraft, setGitBranchDraft] = useState('')
   const [gitBaseCommitDraft, setGitBaseCommitDraft] = useState('')
   const [gitCommitDraft, setGitCommitDraft] = useState('')
+  const [agentIDDraft, setAgentIDDraft] = useState('agent-local')
+  const [leaseSecondsDraft, setLeaseSecondsDraft] = useState('120')
+  const [claimTokenDraft, setClaimTokenDraft] = useState('')
+  const [failReasonDraft, setFailReasonDraft] = useState('')
   const [addChildModalTask, setAddChildModalTask] = useState<TaskNode | null>(null)
   const [addChildTitle, setAddChildTitle] = useState('')
   const [isAddingChild, setIsAddingChild] = useState(false)
@@ -204,6 +221,8 @@ export function App() {
       setGitBranchDraft('')
       setGitBaseCommitDraft('')
       setGitCommitDraft('')
+      setClaimTokenDraft('')
+      setFailReasonDraft('')
       return
     }
 
@@ -495,6 +514,19 @@ export function App() {
     setTaskContext(ctx)
   }
 
+  function buildDefaultResultPayload() {
+    const now = new Date().toISOString()
+    return {
+      summary: `Updated via TasQ UI at ${now}`,
+      changes: 'See task result markdown for details.',
+      paths: 'N/A',
+      commands: 'N/A',
+      tests: 'N/A',
+      artifacts: 'N/A',
+      next_risks: 'N/A'
+    }
+  }
+
   async function moveTask(taskID: number, newParentTaskID: number | null) {
     const res = await fetch(`${apiBase}/tasks/${taskID}/move`, {
       method: 'POST',
@@ -764,6 +796,202 @@ export function App() {
       setTaskMessage(message)
     } finally {
       setIsSavingGitLink(false)
+    }
+  }
+
+  async function claimNextTask() {
+    if (!selectedProjectID) {
+      setTaskMessage('Select a project first.')
+      return
+    }
+    const agentID = agentIDDraft.trim()
+    if (!agentID) {
+      setTaskMessage('Agent ID is required.')
+      return
+    }
+    const lease = Number(leaseSecondsDraft)
+    if (!Number.isInteger(lease) || lease <= 0) {
+      setTaskMessage('Lease seconds must be a positive integer.')
+      return
+    }
+
+    setIsAgentActionRunning(true)
+    setTaskMessage('')
+    try {
+      const res = await fetch(`${apiBase}/agents/claim-next`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: selectedProjectID, agent_id: agentID, lease_seconds: lease })
+      })
+      if (!res.ok) {
+        const message = await res.text()
+        throw new Error(message || 'failed to claim next task')
+      }
+      const data = (await res.json()) as ClaimNextResponse
+      if (!data.task) {
+        setTaskMessage(data.message || 'No claimable task.')
+        return
+      }
+      if (data.claim?.token) {
+        setClaimTokenDraft(data.claim.token)
+      }
+      setSelectedTaskID(data.task.id)
+      await fetchTaskTree(selectedProjectID)
+      const ctx = await fetchTaskContext(data.task.id)
+      setTaskContext(ctx)
+      setTaskMessage(`Claimed task #${data.task.id}.`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'failed to claim next task'
+      setTaskMessage(message)
+    } finally {
+      setIsAgentActionRunning(false)
+    }
+  }
+
+  async function heartbeatClaim() {
+    if (!selectedTask) return
+    const agentID = agentIDDraft.trim()
+    const lease = Number(leaseSecondsDraft)
+    if (!agentID || !claimTokenDraft.trim()) {
+      setTaskMessage('Agent ID and claim token are required.')
+      return
+    }
+    if (!Number.isInteger(lease) || lease <= 0) {
+      setTaskMessage('Lease seconds must be a positive integer.')
+      return
+    }
+
+    setIsAgentActionRunning(true)
+    setTaskMessage('')
+    try {
+      const res = await fetch(`${apiBase}/tasks/${selectedTask.id}/heartbeat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: agentID, lease_seconds: lease, claim_token: claimTokenDraft.trim() })
+      })
+      if (!res.ok) {
+        const message = await res.text()
+        throw new Error(message || 'failed to heartbeat claim')
+      }
+      setTaskMessage('Heartbeat sent.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'failed to heartbeat claim'
+      setTaskMessage(message)
+    } finally {
+      setIsAgentActionRunning(false)
+    }
+  }
+
+  async function releaseClaim() {
+    if (!selectedTask) return
+    const agentID = agentIDDraft.trim()
+    if (!agentID || !claimTokenDraft.trim()) {
+      setTaskMessage('Agent ID and claim token are required.')
+      return
+    }
+
+    setIsAgentActionRunning(true)
+    setTaskMessage('')
+    try {
+      const res = await fetch(`${apiBase}/tasks/${selectedTask.id}/release`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: agentID, claim_token: claimTokenDraft.trim(), to_status: 'planned' })
+      })
+      if (!res.ok) {
+        const message = await res.text()
+        throw new Error(message || 'failed to release claim')
+      }
+      if (selectedProjectID) {
+        await fetchTaskTree(selectedProjectID)
+      }
+      const ctx = await fetchTaskContext(selectedTask.id)
+      setTaskContext(ctx)
+      setTaskMessage('Claim released to planned.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'failed to release claim'
+      setTaskMessage(message)
+    } finally {
+      setIsAgentActionRunning(false)
+    }
+  }
+
+  async function completeClaimedTask() {
+    if (!selectedTask) return
+    const agentID = agentIDDraft.trim()
+    if (!agentID || !claimTokenDraft.trim()) {
+      setTaskMessage('Agent ID and claim token are required.')
+      return
+    }
+
+    setIsAgentActionRunning(true)
+    setTaskMessage('')
+    try {
+      const res = await fetch(`${apiBase}/tasks/${selectedTask.id}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agent_id: agentID,
+          claim_token: claimTokenDraft.trim(),
+          result_md: taskResultDraft,
+          result_payload: buildDefaultResultPayload()
+        })
+      })
+      if (!res.ok) {
+        const message = await res.text()
+        throw new Error(message || 'failed to complete task')
+      }
+      if (selectedProjectID) {
+        await fetchTaskTree(selectedProjectID)
+      }
+      const ctx = await fetchTaskContext(selectedTask.id)
+      setTaskContext(ctx)
+      setTaskMessage('Task completed by agent action.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'failed to complete task'
+      setTaskMessage(message)
+    } finally {
+      setIsAgentActionRunning(false)
+    }
+  }
+
+  async function failClaimedTask() {
+    if (!selectedTask) return
+    const agentID = agentIDDraft.trim()
+    if (!agentID || !claimTokenDraft.trim()) {
+      setTaskMessage('Agent ID and claim token are required.')
+      return
+    }
+
+    setIsAgentActionRunning(true)
+    setTaskMessage('')
+    try {
+      const res = await fetch(`${apiBase}/tasks/${selectedTask.id}/fail`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agent_id: agentID,
+          claim_token: claimTokenDraft.trim(),
+          reason: failReasonDraft.trim() || 'manual fail from UI',
+          result_md: taskResultDraft,
+          result_payload: buildDefaultResultPayload()
+        })
+      })
+      if (!res.ok) {
+        const message = await res.text()
+        throw new Error(message || 'failed to fail task')
+      }
+      if (selectedProjectID) {
+        await fetchTaskTree(selectedProjectID)
+      }
+      const ctx = await fetchTaskContext(selectedTask.id)
+      setTaskContext(ctx)
+      setTaskMessage('Task marked as failed by agent action.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'failed to fail task'
+      setTaskMessage(message)
+    } finally {
+      setIsAgentActionRunning(false)
     }
   }
 
@@ -1167,6 +1395,78 @@ export function App() {
                     </div>
                   </div>
                 )}
+
+                <div className="mt-3 rounded-md border bg-background/40 p-2">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Agent Test Controls</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <Input
+                      placeholder="agent id"
+                      value={agentIDDraft}
+                      onChange={(e) => setAgentIDDraft(e.target.value)}
+                      disabled={isAgentActionRunning}
+                    />
+                    <Input
+                      type="number"
+                      min={1}
+                      placeholder="lease seconds"
+                      value={leaseSecondsDraft}
+                      onChange={(e) => setLeaseSecondsDraft(e.target.value)}
+                      disabled={isAgentActionRunning}
+                    />
+                    <Input
+                      className="col-span-2"
+                      placeholder="claim token"
+                      value={claimTokenDraft}
+                      onChange={(e) => setClaimTokenDraft(e.target.value)}
+                      disabled={isAgentActionRunning}
+                    />
+                    <Input
+                      className="col-span-2"
+                      placeholder="fail reason (optional)"
+                      value={failReasonDraft}
+                      onChange={(e) => setFailReasonDraft(e.target.value)}
+                      disabled={isAgentActionRunning}
+                    />
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" disabled={isAgentActionRunning} onClick={() => void claimNextTask()}>
+                      Claim Next
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isAgentActionRunning || !selectedTask}
+                      onClick={() => void heartbeatClaim()}
+                    >
+                      Heartbeat
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isAgentActionRunning || !selectedTask}
+                      onClick={() => void releaseClaim()}
+                    >
+                      Release
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isAgentActionRunning || !selectedTask}
+                      onClick={() => void completeClaimedTask()}
+                    >
+                      Complete
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-red-300 hover:text-red-200"
+                      disabled={isAgentActionRunning || !selectedTask}
+                      onClick={() => void failClaimedTask()}
+                    >
+                      Fail
+                    </Button>
+                  </div>
+                </div>
               </div>
 
               <MarkdownEditor
