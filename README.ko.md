@@ -148,6 +148,7 @@ cp ./examples/workers.sample.json /abs/path/to/workers.json
 `tasq-http` MCP를 등록한 뒤 새 Codex CLI 세션에서 아래를 그대로 붙여 넣으면 됩니다.
 
 - 템플릿 파일: [templates/planner_prompt_tasq.txt](/Users/jung-yeon-woo/Development/Projects/tasq/templates/planner_prompt_tasq.txt)
+- 분해 가이드: [docs/planner_decomposition_guide.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/planner_decomposition_guide.md)
 - 워커 스펙 샘플: [examples/workers.sample.json](/Users/jung-yeon-woo/Development/Projects/tasq/examples/workers.sample.json)
 - 워커 스펙 스키마: [schemas/workers.schema.json](/Users/jung-yeon-woo/Development/Projects/tasq/schemas/workers.schema.json)
 

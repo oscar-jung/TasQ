@@ -213,6 +213,94 @@ function buildProjectAlertBadge(data: RuntimeAlertsResponse): ProjectAlertBadge 
   }
 }
 
+function describeInterruptedRun(reason: string) {
+  switch (reason) {
+    case 'lease_expired_reconcile':
+      return {
+        label: 'Lease expired',
+        className: 'text-amber-200',
+        hint: 'Previous worker lost its lease. Re-read context and verify on-disk progress before continuing.'
+      }
+    case 'manual_release':
+      return {
+        label: 'Released manually',
+        className: 'text-sky-200',
+        hint: 'The worker intentionally released the task. Claim fresh work before resuming.'
+      }
+    case 'manual_invalidate':
+      return {
+        label: 'Invalidated',
+        className: 'text-rose-200',
+        hint: 'Upstream task or spec changed. Re-check parent and dependency results before editing.'
+      }
+    default:
+      return {
+        label: reason.replaceAll('_', ' '),
+        className: 'text-amber-200',
+        hint: 'Inspect the latest run and task events before continuing.'
+      }
+  }
+}
+
+function deriveGitRecoveryStatus(
+  taskContext: TaskContextResponse,
+  gitRecoverySummary: {
+    baseline: TaskGitRefSummary | null
+    rerunBranch: TaskGitRefSummary | null
+    produced: TaskGitRefSummary | null
+  }
+) {
+  if (taskContext.effective_git_policy !== 'required') {
+    return {
+      label: 'Git optional',
+      detail: 'This task can complete without linked refs.',
+      className: 'text-muted-foreground border-border/70 bg-background/40'
+    }
+  }
+
+  if (!gitRecoverySummary.baseline) {
+    return {
+      label: 'Missing baseline',
+      detail: 'Link the branch point commit before editing.',
+      className: 'text-amber-200 border-amber-500/40 bg-amber-500/10'
+    }
+  }
+
+  if (gitRecoverySummary.rerunBranch && !gitRecoverySummary.produced) {
+    return {
+      label: 'Rerun in progress',
+      detail: 'A rerun branch exists. Link the produced commit before completing.',
+      className: 'text-sky-200 border-sky-500/40 bg-sky-500/10'
+    }
+  }
+
+  if (!gitRecoverySummary.produced) {
+    return {
+      label: 'Awaiting produced ref',
+      detail: 'Link the commit created by this attempt before completion.',
+      className: 'text-amber-200 border-amber-500/40 bg-amber-500/10'
+    }
+  }
+
+  if (
+    gitRecoverySummary.rerunBranch &&
+    gitRecoverySummary.produced.branch &&
+    gitRecoverySummary.produced.branch !== gitRecoverySummary.rerunBranch.branch
+  ) {
+    return {
+      label: 'Branch mismatch',
+      detail: 'Produced commit is on a different branch than the rerun marker. Verify recovery metadata.',
+      className: 'text-rose-200 border-rose-500/40 bg-rose-500/10'
+    }
+  }
+
+  return {
+    label: 'Recovery refs ready',
+    detail: 'Baseline and produced refs are linked for this task.',
+    className: 'text-emerald-200 border-emerald-500/40 bg-emerald-500/10'
+  }
+}
+
 export function App() {
   const [projects, setProjects] = useState<Project[]>([])
   const [projectAlertBadges, setProjectAlertBadges] = useState<Record<number, ProjectAlertBadge>>({})
@@ -376,6 +464,11 @@ export function App() {
       produced: taskContext.git_refs.find((ref) => ref.ref_kind === 'produced') ?? null
     }
   }, [taskContext])
+
+  const gitRecoveryStatus = useMemo(() => {
+    if (!taskContext) return null
+    return deriveGitRecoveryStatus(taskContext, gitRecoverySummary)
+  }, [taskContext, gitRecoverySummary])
 
   const filteredTaskEvents = useMemo(() => {
     const typeNeedle = eventTypeFilter.trim().toLowerCase()
@@ -2777,12 +2870,17 @@ export function App() {
                             <div className="mt-1 max-h-32 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
                               {taskContext.interrupted_runs.map((run) => (
                                 <div key={run.id} className="rounded border border-border/60 bg-background/50 p-2 text-xs">
+                                  {(() => {
+                                    const reasonMeta = describeInterruptedRun(run.reason)
+                                    return (
+                                      <>
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="truncate text-foreground/90">
                                       #{run.attempt_no} {run.agent_id}
                                     </span>
-                                    <span className="uppercase text-amber-200">{run.reason.replaceAll('_', ' ')}</span>
+                                    <span className={`uppercase ${reasonMeta.className}`}>{reasonMeta.label}</span>
                                   </div>
+                                  <p className="mt-1 text-muted-foreground">{reasonMeta.hint}</p>
                                   {run.resume_hint && <p className="mt-1 text-muted-foreground">{run.resume_hint}</p>}
                                   {run.checkpoint && (
                                     <p className="mt-1 text-[11px] text-muted-foreground">
@@ -2792,6 +2890,9 @@ export function App() {
                                   {run.to_status && (
                                     <p className="mt-1 text-[11px] text-muted-foreground">Released to: {run.to_status}</p>
                                   )}
+                                      </>
+                                    )
+                                  })()}
                                 </div>
                               ))}
                             </div>
@@ -2811,7 +2912,13 @@ export function App() {
                               <span className="rounded-full border border-emerald-500/60 px-2 py-0.5 text-[10px] uppercase tracking-wide text-emerald-200">
                                 Effective: {taskContext.effective_git_policy}
                               </span>
+                              {gitRecoveryStatus && (
+                                <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${gitRecoveryStatus.className}`}>
+                                  {gitRecoveryStatus.label}
+                                </span>
+                              )}
                             </div>
+                            {gitRecoveryStatus && <p className="mt-2 text-muted-foreground">{gitRecoveryStatus.detail}</p>}
                             {taskContext.effective_git_policy === 'required' && (
                               <p className="mt-2 text-muted-foreground">
                                 Completion is blocked until a baseline ref exists and a produced ref is linked during the current attempt.

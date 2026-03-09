@@ -126,6 +126,24 @@ cat tasq_backup.sql | docker compose exec -T db psql -U tasq -d tasq
   - what remains risky or unfinished
 - If a worker is interrupted, the next worker should inspect `task context -> interrupted_runs` before continuing.
 
+### 5) Interrupted run taxonomy
+- Current interruption reasons exposed through `task context -> interrupted_runs`:
+  - `lease_expired_reconcile`: prior worker stopped heartbeating and TasQ released the stale claim
+  - `manual_release`: worker intentionally released the task back to queue
+  - `manual_invalidate`: operator invalidated the task/rerun scope after upstream changes
+- Operators should treat these differently:
+  - `lease_expired_reconcile`: verify on-disk progress and linked refs before continuing
+  - `manual_release`: assume the worker stopped intentionally and re-read the latest task context
+  - `manual_invalidate`: assume upstream assumptions changed and review parent/dependency results first
+
+### 6) Git recovery status interpretation
+- In Git-required mode, Task Detail shows a recovery status summary:
+  - `Missing baseline`: no branch point commit linked yet
+  - `Awaiting produced ref`: baseline exists, but current attempt has not linked its output commit
+  - `Rerun in progress`: rerun branch exists but produced commit is not linked yet
+  - `Recovery refs ready`: baseline and produced refs are present
+  - `Branch mismatch`: rerun branch marker and produced commit branch disagree; inspect before completion
+
 ## Recommended Metrics (next)
 - queue depth (claimable planned tasks)
 - claim latency (claim -> complete)

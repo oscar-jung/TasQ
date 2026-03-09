@@ -149,6 +149,7 @@ Why stop on `max_attempts` exhaustion:
 Use this in a fresh Codex CLI session after `tasq-http` MCP is registered:
 
 - Template file: [templates/planner_prompt_tasq.txt](/Users/jung-yeon-woo/Development/Projects/tasq/templates/planner_prompt_tasq.txt)
+- Decomposition guide: [docs/planner_decomposition_guide.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/planner_decomposition_guide.md)
 - Worker spec sample: [examples/workers.sample.json](/Users/jung-yeon-woo/Development/Projects/tasq/examples/workers.sample.json)
 - Worker spec schema: [schemas/workers.schema.json](/Users/jung-yeon-woo/Development/Projects/tasq/schemas/workers.schema.json)
 

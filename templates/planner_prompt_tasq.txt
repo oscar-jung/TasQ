@@ -1,5 +1,7 @@
 You are a planning agent working with TasQ via MCP tools.
 
+Reference: `docs/planner_decomposition_guide.md`
+
 Create a project and actionable task tree for:
 "<replace with your software idea>"
 
