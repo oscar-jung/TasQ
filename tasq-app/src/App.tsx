@@ -244,6 +244,55 @@ function gitRecoverySeverityClass(severity: 'info' | 'warning' | 'critical' | 's
   return 'text-amber-200 border-amber-500/40 bg-amber-500/10'
 }
 
+function slugifyBranchPart(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32) || 'task'
+}
+
+function buildWorkspaceRecoveryCommands(
+  task: TaskNode | null,
+  gitSummary: { baseline: TaskGitRefSummary | null; rerunBranch: TaskGitRefSummary | null; produced: TaskGitRefSummary | null },
+  gitPolicy: 'optional' | 'required'
+) {
+  if (!task) {
+    return {
+      warning: 'TasQ rerun resets task state only. It does not restore files in your workspace.',
+      commands: [] as string[]
+    }
+  }
+
+  const suggestedBranch = `rerun/task-${task.id}-${slugifyBranchPart(task.title)}`
+  const baselineRef = gitSummary.baseline?.commit_sha || gitSummary.baseline?.base_commit || ''
+  const rerunBranch = gitSummary.rerunBranch?.branch || suggestedBranch
+  const producedRef = gitSummary.produced?.commit_sha || ''
+  const commands: string[] = []
+
+  if (baselineRef) {
+    commands.push(`# Create or reset a rerun branch at the baseline commit for task ${task.id}`)
+    commands.push(`git switch -C ${rerunBranch} ${baselineRef}`)
+  } else if (gitPolicy === 'required') {
+    commands.push('# No baseline ref is linked yet. Link one before rerunning code changes.')
+  } else {
+    commands.push('# No baseline ref is linked. TasQ can rerun task state, but workspace rollback stays manual.')
+    commands.push(`# Consider creating a rerun branch before editing`)
+    commands.push(`git switch -c ${rerunBranch}`)
+  }
+
+  if (producedRef) {
+    commands.push('')
+    commands.push('# Inspect the last produced commit before discarding or reworking it')
+    commands.push(`git show --stat ${producedRef}`)
+  }
+
+  return {
+    warning: 'TasQ rerun resets queue state only. It does not automatically roll back files. Run Git recovery yourself if you want the workspace to match the rerun baseline.',
+    commands
+  }
+}
+
 export function App() {
   const [projects, setProjects] = useState<Project[]>([])
   const [projectAlertBadges, setProjectAlertBadges] = useState<Record<number, ProjectAlertBadge>>({})
@@ -414,6 +463,14 @@ export function App() {
     if (!taskContext) return null
     return taskContext.git_recovery
   }, [taskContext, gitRecoverySummary])
+
+  const workspaceRecovery = useMemo(() => {
+    return buildWorkspaceRecoveryCommands(
+      selectedTask,
+      gitRecoverySummary,
+      taskContext?.effective_git_policy ?? 'optional'
+    )
+  }, [selectedTask, gitRecoverySummary, taskContext])
 
   const filteredTaskEvents = useMemo(() => {
     const typeNeedle = eventTypeFilter.trim().toLowerCase()
@@ -3053,6 +3110,15 @@ export function App() {
                               </p>
                             )}
                           </div>
+                          <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs">
+                            <p className="font-medium text-amber-100">Workspace rollback stays manual</p>
+                            <p className="mt-1 text-amber-100/80">{workspaceRecovery.warning}</p>
+                            {workspaceRecovery.commands.length > 0 && (
+                              <pre className="mt-2 overflow-x-auto rounded bg-background/70 p-2 text-[11px] leading-relaxed text-foreground/90">
+                                {workspaceRecovery.commands.join('\n')}
+                              </pre>
+                            )}
+                          </div>
                           <div className="mt-1 grid gap-2 rounded-md border bg-background/50 p-2 text-xs xl:grid-cols-3">
                             <div className="rounded border border-border/60 bg-background/40 p-2">
                               <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Baseline</p>
@@ -3365,6 +3431,20 @@ export function App() {
             <p className="mt-2 text-xs text-muted-foreground">
               Target: <span className="text-foreground">{invalidateModal.task.title}</span>
             </p>
+            <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
+              <p className="font-medium text-amber-100">This resets TasQ state only</p>
+              <p className="mt-1 text-amber-100/80">
+                The rerun action will move affected tasks back to planned inside TasQ. It will not automatically restore files in your workspace.
+              </p>
+              {workspaceRecovery.commands.length > 0 && (
+                <>
+                  <p className="mt-2 text-amber-100/80">If you want the codebase to match the rerun baseline, run the following first:</p>
+                  <pre className="mt-2 overflow-x-auto rounded bg-background/70 p-2 text-[11px] leading-relaxed text-foreground/90">
+                    {workspaceRecovery.commands.join('\n')}
+                  </pre>
+                </>
+              )}
+            </div>
             <label className="mt-4 flex items-start gap-2 text-sm text-muted-foreground">
               <input
                 type="checkbox"
