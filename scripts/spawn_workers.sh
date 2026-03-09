@@ -224,6 +224,8 @@ Rules:
 - Use TasQ MCP tools only for queue lifecycle: claim, context, heartbeat, complete, fail, git ref.
 - Immediately fetch task context after every claim.
 - If execution or tests may take longer than ${HEARTBEAT_SECONDS} seconds, send tasq_heartbeat before the lease goes stale.
+- Save a tasq_save_checkpoint note after meaningful progress and before risky edits or long tests.
+- If task context returns interrupted_runs, read the latest reason, resume hint, and checkpoint before editing.
 - If this session restarts after interruption, do not assume the prior claim is still valid. Claim fresh work from TasQ.
 - If claim returns no task, exit cleanly.
 - Keep the result payload factual and concise.
@@ -236,10 +238,11 @@ Loop:
 4) Implement exactly what the task spec requires in the current workspace.
 5) Run verification or tests that match the task scope.
 6) Send tasq_heartbeat periodically while work is in progress.
-7) If success, call tasq_complete_task with result_md and result_payload_version="v2".
-8) If failure, call tasq_fail_task with reason and result_payload_version="v2".
-9) If a git commit was created, call tasq_link_git_ref.
-10) Repeat until no claimable task remains.
+7) Save tasq_save_checkpoint notes when progress reaches a meaningful checkpoint.
+8) If success, call tasq_complete_task with result_md and result_payload_version="v2".
+9) If failure, call tasq_fail_task with reason and result_payload_version="v2".
+10) For reruns, prefer a fresh branch and then call tasq_link_git_ref with branch/base/commit refs.
+11) Repeat until no claimable task remains.
 
 Result payload v2 must include:
 - summary

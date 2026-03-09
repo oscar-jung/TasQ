@@ -69,6 +69,13 @@ type heartbeatArgs struct {
 	LeaseSeconds int64  `json:"lease_seconds,omitempty"`
 }
 
+type checkpointArgs struct {
+	TaskID     int64  `json:"task_id"`
+	AgentID    string `json:"agent_id"`
+	ClaimToken string `json:"claim_token"`
+	Note       string `json:"note"`
+}
+
 type resultPayloadV2 struct {
 	Summary   string   `json:"summary"`
 	Changes   []string `json:"changes"`
@@ -395,6 +402,20 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 						},
 					},
 					{
+						"name":        "tasq_save_checkpoint",
+						"description": "Save a mid-run checkpoint note for the active task claim.",
+						"inputSchema": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"task_id":     map[string]any{"type": "integer"},
+								"agent_id":    map[string]any{"type": "string"},
+								"claim_token": map[string]any{"type": "string"},
+								"note":        map[string]any{"type": "string"},
+							},
+							"required": []string{"task_id", "agent_id", "claim_token", "note"},
+						},
+					},
+					{
 						"name":        "tasq_complete_task",
 						"description": "Complete claimed task with v2 result payload.",
 						"inputSchema": map[string]any{
@@ -631,6 +652,23 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 				"agent_id":      strings.TrimSpace(args.AgentID),
 				"claim_token":   strings.TrimSpace(args.ClaimToken),
 				"lease_seconds": args.LeaseSeconds,
+			}, cfg.AgentToken)
+			if err != nil {
+				return toolError(err)
+			}
+			return toolResult(resBody)
+		case "tasq_save_checkpoint":
+			var args checkpointArgs
+			if err := decodeArgs(payload.Arguments, &args); err != nil {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: err.Error()}}
+			}
+			if args.TaskID == 0 || strings.TrimSpace(args.AgentID) == "" || strings.TrimSpace(args.ClaimToken) == "" || strings.TrimSpace(args.Note) == "" {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: "task_id, agent_id, claim_token, and note are required"}}
+			}
+			resBody, err := tasqJSON(cfg, http.MethodPost, fmt.Sprintf("/tasks/%d/checkpoint", args.TaskID), map[string]any{
+				"agent_id":    strings.TrimSpace(args.AgentID),
+				"claim_token": strings.TrimSpace(args.ClaimToken),
+				"note":        strings.TrimSpace(args.Note),
 			}, cfg.AgentToken)
 			if err != nil {
 				return toolError(err)

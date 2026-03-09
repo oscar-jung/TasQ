@@ -41,8 +41,9 @@ Loop:
 2) fetch task context
 3) execute task work in local repository
 4) heartbeat for long tasks before lease expiry
-5) complete (or fail) with result_payload v2
-6) link git refs when commits exist
+5) save checkpoint notes after meaningful progress
+6) complete (or fail) with result_payload v2
+7) link git refs when commits exist
 Stop when no claimable task remains.
 ```
 
@@ -50,6 +51,7 @@ Stop when no claimable task remains.
 - `tasq_claim_next`
 - `tasq_get_task_context`
 - `tasq_heartbeat`
+- `tasq_save_checkpoint`
 - `tasq_complete_task`
 - `tasq_fail_task`
 - `tasq_link_git_ref`
@@ -75,6 +77,7 @@ worker-3: capabilities = ["db","migration"]
 ```
 
 Because TasQ claim APIs are lease/token based, workers can run concurrently with at-least-once semantics.
+For reruns, prefer a branch-first recovery flow and link the new branch/base/commit refs back to the task.
 
 ## 4) Spawn spec and worker supervisor
 Planner sessions should emit a JSON file that can be consumed by `scripts/spawn_workers.sh`.
