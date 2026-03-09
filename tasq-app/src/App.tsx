@@ -133,6 +133,12 @@ export function App() {
   const [isLoadingTaskContext, setIsLoadingTaskContext] = useState(false)
   const [taskEvents, setTaskEvents] = useState<TaskEventSummary[]>([])
   const [projectEvents, setProjectEvents] = useState<TaskEventSummary[]>([])
+  const [eventTypeFilter, setEventTypeFilter] = useState('')
+  const [eventActorFilter, setEventActorFilter] = useState('')
+  const [eventFromDraft, setEventFromDraft] = useState('')
+  const [eventToDraft, setEventToDraft] = useState('')
+  const [runStatusFilter, setRunStatusFilter] = useState<'all' | 'running' | 'completed' | 'failed' | 'released'>('all')
+  const [runAgentFilter, setRunAgentFilter] = useState('')
   const [isLoadingTaskEvents, setIsLoadingTaskEvents] = useState(false)
   const [isLoadingProjectEvents, setIsLoadingProjectEvents] = useState(false)
   const [taskEventsError, setTaskEventsError] = useState('')
@@ -204,6 +210,64 @@ export function App() {
     () => (selectedTaskID ? taskByID.get(selectedTaskID) ?? null : null),
     [selectedTaskID, taskByID]
   )
+
+  const filteredRuns = useMemo(() => {
+    if (!taskContext) return []
+    const agentNeedle = runAgentFilter.trim().toLowerCase()
+    return taskContext.recent_runs.filter((run) => {
+      if (runStatusFilter !== 'all' && run.status !== runStatusFilter) return false
+      if (agentNeedle && !run.agent_id.toLowerCase().includes(agentNeedle)) return false
+      return true
+    })
+  }, [taskContext, runStatusFilter, runAgentFilter])
+
+  const filteredTaskEvents = useMemo(() => {
+    const typeNeedle = eventTypeFilter.trim().toLowerCase()
+    const actorNeedle = eventActorFilter.trim().toLowerCase()
+    const fromTime = eventFromDraft ? new Date(eventFromDraft).getTime() : null
+    const toTime = eventToDraft ? new Date(eventToDraft).getTime() : null
+    return taskEvents.filter((event) => {
+      if (typeNeedle && !event.event_type.toLowerCase().includes(typeNeedle)) return false
+      const actor = `${event.actor_type}:${event.actor_id}`.toLowerCase()
+      if (actorNeedle && !actor.includes(actorNeedle)) return false
+      const t = new Date(event.created_at).getTime()
+      if (fromTime && !Number.isNaN(fromTime) && t < fromTime) return false
+      if (toTime && !Number.isNaN(toTime) && t > toTime) return false
+      return true
+    })
+  }, [taskEvents, eventTypeFilter, eventActorFilter, eventFromDraft, eventToDraft])
+
+  const filteredProjectEvents = useMemo(() => {
+    const typeNeedle = eventTypeFilter.trim().toLowerCase()
+    const actorNeedle = eventActorFilter.trim().toLowerCase()
+    const fromTime = eventFromDraft ? new Date(eventFromDraft).getTime() : null
+    const toTime = eventToDraft ? new Date(eventToDraft).getTime() : null
+    return projectEvents.filter((event) => {
+      if (typeNeedle && !event.event_type.toLowerCase().includes(typeNeedle)) return false
+      const actor = `${event.actor_type}:${event.actor_id}`.toLowerCase()
+      if (actorNeedle && !actor.includes(actorNeedle)) return false
+      const t = new Date(event.created_at).getTime()
+      if (fromTime && !Number.isNaN(fromTime) && t < fromTime) return false
+      if (toTime && !Number.isNaN(toTime) && t > toTime) return false
+      return true
+    })
+  }, [projectEvents, eventTypeFilter, eventActorFilter, eventFromDraft, eventToDraft])
+
+  const projectFailureStats = useMemo(() => {
+    const now = Date.now()
+    const dayAgo = now - 24 * 60 * 60 * 1000
+    let totalFailures = 0
+    let failures24h = 0
+    const taskSet = new Set<number>()
+    filteredProjectEvents.forEach((event) => {
+      if (event.event_type !== 'task.failed') return
+      totalFailures += 1
+      taskSet.add(event.task_id)
+      const t = new Date(event.created_at).getTime()
+      if (!Number.isNaN(t) && t >= dayAgo) failures24h += 1
+    })
+    return { totalFailures, failures24h, affectedTasks: taskSet.size }
+  }, [filteredProjectEvents])
 
   function formatEventTime(iso: string) {
     const date = new Date(iso)
@@ -1647,14 +1711,60 @@ export function App() {
 
                 {taskContext && (
                   <div className="mt-3 grid gap-3">
+                    <div className="rounded-md border bg-background/40 p-2">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Observability Filters</p>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <Input
+                          placeholder="event type (e.g. task.failed)"
+                          value={eventTypeFilter}
+                          onChange={(e) => setEventTypeFilter(e.target.value)}
+                        />
+                        <Input
+                          placeholder="actor (type:id)"
+                          value={eventActorFilter}
+                          onChange={(e) => setEventActorFilter(e.target.value)}
+                        />
+                        <Input
+                          type="datetime-local"
+                          value={eventFromDraft}
+                          onChange={(e) => setEventFromDraft(e.target.value)}
+                        />
+                        <Input
+                          type="datetime-local"
+                          value={eventToDraft}
+                          onChange={(e) => setEventToDraft(e.target.value)}
+                        />
+                        <Input
+                          placeholder="run agent filter"
+                          value={runAgentFilter}
+                          onChange={(e) => setRunAgentFilter(e.target.value)}
+                        />
+                        <select
+                          className="h-10 rounded-md border border-border bg-background px-2 text-sm"
+                          value={runStatusFilter}
+                          onChange={(e) =>
+                            setRunStatusFilter(
+                              e.target.value as 'all' | 'running' | 'completed' | 'failed' | 'released'
+                            )
+                          }
+                        >
+                          <option value="all">All run statuses</option>
+                          <option value="running">running</option>
+                          <option value="completed">completed</option>
+                          <option value="failed">failed</option>
+                          <option value="released">released</option>
+                        </select>
+                      </div>
+                    </div>
+
                     <div>
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Recent Runs</p>
-                      {taskContext.recent_runs.length === 0 && (
+                      {filteredRuns.length === 0 && (
                         <p className="mt-1 text-xs text-muted-foreground">No run history yet.</p>
                       )}
-                      {taskContext.recent_runs.length > 0 && (
+                      {filteredRuns.length > 0 && (
                         <div className="mt-1 max-h-32 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
-                          {taskContext.recent_runs.map((run) => (
+                          {filteredRuns.map((run) => (
                             <div key={run.id} className="flex items-center justify-between text-xs">
                               <span className="truncate text-muted-foreground">
                                 #{run.attempt_no} {run.agent_id}
@@ -1692,12 +1802,12 @@ export function App() {
                         <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Task Events</p>
                         {isLoadingTaskEvents && <p className="mt-1 text-xs text-muted-foreground">Loading task events...</p>}
                         {taskEventsError && <p className="mt-1 text-xs text-red-300">{taskEventsError}</p>}
-                        {!isLoadingTaskEvents && !taskEventsError && taskEvents.length === 0 && (
+                        {!isLoadingTaskEvents && !taskEventsError && filteredTaskEvents.length === 0 && (
                           <p className="mt-1 text-xs text-muted-foreground">No task events yet.</p>
                         )}
-                        {taskEvents.length > 0 && (
+                        {filteredTaskEvents.length > 0 && (
                           <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
-                            {taskEvents.map((event) => (
+                            {filteredTaskEvents.map((event) => (
                               <div key={event.id} className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
                                 <p className="font-medium text-foreground/90">{event.event_type}</p>
                                 <p className="text-muted-foreground">
@@ -1716,12 +1826,26 @@ export function App() {
                           <p className="mt-1 text-xs text-muted-foreground">Loading project events...</p>
                         )}
                         {projectEventsError && <p className="mt-1 text-xs text-red-300">{projectEventsError}</p>}
-                        {!isLoadingProjectEvents && !projectEventsError && projectEvents.length === 0 && (
+                        {!isLoadingProjectEvents && !projectEventsError && filteredProjectEvents.length === 0 && (
                           <p className="mt-1 text-xs text-muted-foreground">No project events yet.</p>
                         )}
-                        {projectEvents.length > 0 && (
+                        <div className="mt-1 grid grid-cols-3 gap-2 text-xs">
+                          <div className="rounded border border-border/60 bg-background/60 p-1.5">
+                            <p className="text-muted-foreground">Failures</p>
+                            <p className="font-semibold">{projectFailureStats.totalFailures}</p>
+                          </div>
+                          <div className="rounded border border-border/60 bg-background/60 p-1.5">
+                            <p className="text-muted-foreground">Failures 24h</p>
+                            <p className="font-semibold">{projectFailureStats.failures24h}</p>
+                          </div>
+                          <div className="rounded border border-border/60 bg-background/60 p-1.5">
+                            <p className="text-muted-foreground">Affected Tasks</p>
+                            <p className="font-semibold">{projectFailureStats.affectedTasks}</p>
+                          </div>
+                        </div>
+                        {filteredProjectEvents.length > 0 && (
                           <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
-                            {projectEvents.map((event) => (
+                            {filteredProjectEvents.map((event) => (
                               <div key={event.id} className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
                                 <p className="font-medium text-foreground/90">
                                   T#{event.task_id} · {event.event_type}
