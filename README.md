@@ -84,6 +84,7 @@ codex mcp add tasq-http --url http://localhost:8091/mcp
 Planner sessions should emit a worker spawn spec JSON file and then launch:
 
 ```bash
+cp ./examples/workers.sample.json /abs/path/to/workers.json
 ./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
 ```
 
@@ -103,6 +104,9 @@ Why stop on `max_attempts` exhaustion:
 ## Copy-paste prompts you can try
 ### 1) Planner prompt
 Use this in a fresh Codex CLI session after `tasq-http` MCP is registered:
+
+- Template file: [templates/planner_prompt_tasq.txt](/Users/jung-yeon-woo/Development/Projects/tasq/templates/planner_prompt_tasq.txt)
+- Worker spec sample: [examples/workers.sample.json](/Users/jung-yeon-woo/Development/Projects/tasq/examples/workers.sample.json)
 
 ```text
 You are a planning agent working with TasQ via MCP tools.
@@ -141,6 +145,8 @@ At the end, print:
 
 ### 2) Start workers automatically
 ```bash
+cp ./examples/workers.sample.json /abs/path/to/workers.json
+# edit project_id and workspace in workers.json first
 ./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
 ```
 

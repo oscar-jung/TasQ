@@ -1,0 +1,26 @@
+You are a planning agent working with TasQ via MCP tools.
+
+Create a project and actionable task tree for:
+"<replace with your software idea>"
+
+Rules:
+- Use TasQ MCP tools to create one project, root tasks, child tasks, and dependency edges.
+- Keep tasks small enough for one focused worker run.
+- Use required_capabilities sparingly.
+- Keep at least one root task immediately claimable by a generic worker.
+- Prefer generic capability labels unless specialized routing is truly necessary.
+- Suggested generic labels: go, cli, integration, testing, docs, frontend, backend, db.
+- Do not implement code in this session.
+- At the end, report the numeric project_id.
+- Also create a workers.json file in the current workspace based on examples/workers.sample.json.
+- Fill workers.json with:
+  - the actual numeric project_id
+  - the absolute workspace path
+  - the worker capability split that matches the task plan
+
+Output at the end:
+- project_id
+- concise tree summary
+- dependency summary
+- capability routing summary
+- path to workers.json

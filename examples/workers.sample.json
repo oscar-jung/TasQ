@@ -1,0 +1,18 @@
+{
+  "project_id": 2,
+  "workspace": "/absolute/path/to/your/repo",
+  "api_base": "http://127.0.0.1:8080",
+  "lease_seconds": 300,
+  "heartbeat_seconds": 60,
+  "poll_seconds": 15,
+  "workers": [
+    {
+      "agent_id": "worker-1",
+      "capabilities": ["go", "cli", "docs"]
+    },
+    {
+      "agent_id": "worker-2",
+      "capabilities": ["go", "integration", "testing", "docs"]
+    }
+  ]
+}

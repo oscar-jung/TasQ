@@ -83,6 +83,7 @@ codex mcp add tasq-http --url http://localhost:8091/mcp
 플래너 세션은 worker spawn spec JSON 파일을 만들고, 이후 아래 스크립트를 실행하면 됩니다.
 
 ```bash
+cp ./examples/workers.sample.json /abs/path/to/workers.json
 ./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
 ```
 
@@ -102,6 +103,9 @@ codex mcp add tasq-http --url http://localhost:8091/mcp
 ## 바로 써볼 수 있는 프롬프트
 ### 1) 플래너 프롬프트
 `tasq-http` MCP를 등록한 뒤 새 Codex CLI 세션에서 아래를 그대로 붙여 넣으면 됩니다.
+
+- 템플릿 파일: [templates/planner_prompt_tasq.txt](/Users/jung-yeon-woo/Development/Projects/tasq/templates/planner_prompt_tasq.txt)
+- 워커 스펙 샘플: [examples/workers.sample.json](/Users/jung-yeon-woo/Development/Projects/tasq/examples/workers.sample.json)
 
 ```text
 You are a planning agent working with TasQ via MCP tools.
@@ -140,6 +144,8 @@ At the end, print:
 
 ### 2) 워커 자동 실행
 ```bash
+cp ./examples/workers.sample.json /abs/path/to/workers.json
+# 먼저 workers.json의 project_id와 workspace를 수정
 ./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
 ```
 
