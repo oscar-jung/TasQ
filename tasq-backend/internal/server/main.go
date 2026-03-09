@@ -61,10 +61,11 @@ type updateProjectReq struct {
 }
 
 type createTaskReq struct {
-	ParentTaskID *int64 `json:"parent_task_id"`
-	Title        string `json:"title"`
-	SpecMD       string `json:"spec_md"`
-	MaxAttempts  *int   `json:"max_attempts"`
+	ParentTaskID         *int64   `json:"parent_task_id"`
+	Title                string   `json:"title"`
+	SpecMD               string   `json:"spec_md"`
+	MaxAttempts          *int     `json:"max_attempts"`
+	RequiredCapabilities []string `json:"required_capabilities"`
 }
 
 type addDependencyReq struct {
@@ -83,9 +84,10 @@ type updateTaskContentReq struct {
 }
 
 type claimNextReq struct {
-	ProjectID    int64  `json:"project_id"`
-	AgentID      string `json:"agent_id"`
-	LeaseSeconds int64  `json:"lease_seconds"`
+	ProjectID    int64    `json:"project_id"`
+	AgentID      string   `json:"agent_id"`
+	LeaseSeconds int64    `json:"lease_seconds"`
+	Capabilities []string `json:"capabilities"`
 }
 
 type heartbeatReq struct {
@@ -132,6 +134,10 @@ type deleteTaskReq struct {
 
 type updateTaskExecutionPolicyReq struct {
 	MaxAttempts int `json:"max_attempts"`
+}
+
+type updateTaskCapabilitiesReq struct {
+	RequiredCapabilities []string `json:"required_capabilities"`
 }
 
 type linkTaskGitRefReq struct {
@@ -473,6 +479,14 @@ func (s *server) tasksSubrouter(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.updateTaskExecutionPolicy(w, r, taskID)
+			return
+		}
+	case "capabilities":
+		if r.Method == http.MethodPatch {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "task:admin", true); !ok {
+				return
+			}
+			s.updateTaskCapabilities(w, r, taskID)
 			return
 		}
 	case "git-link":

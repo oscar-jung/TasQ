@@ -27,6 +27,7 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, projectID in
 		http.Error(w, "max_attempts must be >= 1", http.StatusBadRequest)
 		return
 	}
+	requiredCapabilities := normalizeCapabilities(req.RequiredCapabilities)
 
 	tx, err := s.db.BeginTx(r.Context(), nil)
 	if err != nil {
@@ -53,15 +54,15 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, projectID in
 
 	var t task
 	err = tx.QueryRowContext(r.Context(), `
-		INSERT INTO tasks(project_id, parent_task_id, title, spec_md, status, max_attempts, display_order)
-		VALUES ($1, $2, $3, $4, 'planned', COALESCE($5, 5), COALESCE((
+		INSERT INTO tasks(project_id, parent_task_id, title, spec_md, status, max_attempts, required_capabilities, display_order)
+		VALUES ($1, $2, $3, $4, 'planned', COALESCE($5, 5), $6::text[], COALESCE((
 			SELECT MAX(display_order) + 1024
 			FROM tasks
 			WHERE project_id = $1
 			  AND parent_task_id IS NOT DISTINCT FROM $2
 		), 1024))
 		RETURNING id, project_id, parent_task_id, title, spec_md, result_md, status, max_attempts, display_order, created_at, started_at, done_at`,
-		projectID, req.ParentTaskID, req.Title, req.SpecMD, req.MaxAttempts,
+		projectID, req.ParentTaskID, req.Title, req.SpecMD, req.MaxAttempts, pq.Array(requiredCapabilities),
 	).Scan(&t.ID, &t.ProjectID, &t.ParentID, &t.Title, &t.SpecMD, &t.ResultMD, &t.Status, &t.MaxAttempts, &t.DisplayOrder, &t.CreatedAt, &t.StartedAt, &t.DoneAt)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -75,6 +76,63 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, projectID in
 
 	s.maybeRunTreeGuard(r.Context(), projectID)
 	writeJSON(w, http.StatusCreated, t)
+}
+
+// updateTaskCapabilities handles PATCH /tasks/:task_id/capabilities.
+func (s *server) updateTaskCapabilities(w http.ResponseWriter, r *http.Request, taskID int64) {
+	var req updateTaskCapabilitiesReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	requiredCapabilities := normalizeCapabilities(req.RequiredCapabilities)
+
+	tx, err := s.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	var projectID int64
+	if err := tx.QueryRowContext(r.Context(), `SELECT project_id FROM tasks WHERE id = $1 FOR UPDATE`, taskID).Scan(&projectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "task not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := lockProjectTopology(r.Context(), tx, projectID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if _, err := tx.ExecContext(r.Context(), `
+		UPDATE tasks
+		SET required_capabilities = $2::text[],
+			updated_at = NOW()
+		WHERE id = $1`, taskID, pq.Array(requiredCapabilities)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	actorType, actorID := actorForEvent(r)
+	if err := logEvent(r.Context(), tx, taskID, "task.capabilities.updated", actorType, actorID, map[string]any{
+		"required_capabilities": requiredCapabilities,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	s.maybeRunTreeGuard(r.Context(), projectID)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // addDependency handles POST /tasks/:task_id/dependencies.
@@ -924,6 +982,26 @@ func isDescendantTask(ctx context.Context, tx *sql.Tx, rootTaskID, candidateTask
 		return false, err
 	}
 	return count > 0, nil
+}
+
+func normalizeCapabilities(in []string) []string {
+	if len(in) == 0 {
+		return []string{}
+	}
+	out := make([]string, 0, len(in))
+	seen := map[string]struct{}{}
+	for _, v := range in {
+		clean := strings.ToLower(strings.TrimSpace(v))
+		if clean == "" {
+			continue
+		}
+		if _, ok := seen[clean]; ok {
+			continue
+		}
+		seen[clean] = struct{}{}
+		out = append(out, clean)
+	}
+	return out
 }
 
 // nullableTaskIDEqual compares nullable parent ids.

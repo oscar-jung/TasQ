@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	pq "github.com/lib/pq"
 )
 
 // claimNext handles POST /agents/claim-next.
@@ -37,6 +39,7 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 	if req.LeaseSeconds <= 0 {
 		req.LeaseSeconds = 120
 	}
+	capabilities := normalizeCapabilities(req.Capabilities)
 
 	tx, err := s.db.BeginTx(r.Context(), nil)
 	if err != nil {
@@ -56,6 +59,10 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 		FROM tasks t
 		WHERE t.project_id = $1
 		  AND t.status = 'planned'
+		  AND (
+			COALESCE(array_length(t.required_capabilities, 1), 0) = 0
+			OR t.required_capabilities <@ $2::text[]
+		  )
 		  AND (
 			t.parent_task_id IS NULL
 			OR EXISTS (
@@ -85,7 +92,7 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 		  )
 		ORDER BY t.display_order ASC, t.created_at ASC
 		LIMIT 1
-		FOR UPDATE SKIP LOCKED`, req.ProjectID).
+		FOR UPDATE SKIP LOCKED`, req.ProjectID, pq.Array(capabilities)).
 		Scan(&t.ID, &t.ProjectID, &t.ParentID, &t.Title, &t.SpecMD, &t.ResultMD, &t.Status, &t.MaxAttempts, &t.DisplayOrder, &t.CreatedAt, &t.StartedAt, &t.DoneAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeJSON(w, http.StatusOK, map[string]any{"task": nil, "message": "no claimable task"})

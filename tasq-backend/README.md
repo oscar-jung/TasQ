@@ -16,6 +16,7 @@
 - `POST /tasks/:id/delete`
 - `PATCH /tasks/:id/status`
 - `PATCH /tasks/:id/execution-policy`
+- `PATCH /tasks/:id/capabilities`
 - `POST /agents/claim-next`
 - `POST /projects/:id/claims/reconcile`
 - `POST /tasks/:id/heartbeat`
@@ -39,6 +40,9 @@
 - Dependency graph is validated as DAG at creation time.
 - A task can move to `in_progress` or `done` only if all predecessor tasks are `done`.
 - Task status includes `failed`, and execution policy includes `max_attempts` (default `5`).
+- Capability-based claim filtering:
+  - task `required_capabilities` can be set by `PATCH /tasks/:id/capabilities`
+  - agent `POST /agents/claim-next` may provide `capabilities`; required set must be satisfied
 - Queue lease lifecycle supports `claim -> heartbeat -> complete|release`.
 - Queue lease lifecycle supports `claim -> heartbeat -> complete|release|fail`.
 - Claim lease defaults to `120s` when omitted.

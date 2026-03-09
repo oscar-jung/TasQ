@@ -18,6 +18,7 @@ A task is claimable when all conditions are true:
 - all dependency predecessors are `done`
 - no active unexpired claim exists
 - total claims `< max_attempts`
+- if task `required_capabilities` is non-empty, it must be subset of agent request `capabilities`
 
 Ordering:
 - `display_order ASC`, then `created_at ASC`
@@ -43,7 +44,8 @@ Request:
 {
   "project_id": 1,
   "agent_id": "agent-1",
-  "lease_seconds": 120
+  "lease_seconds": 120,
+  "capabilities": ["go", "backend", "db-migration"]
 }
 ```
 
@@ -80,6 +82,9 @@ Response (empty queue):
 
 ### 1a) Manual Reconcile (optional admin control)
 `POST /projects/:project_id/claims/reconcile`
+
+### 1b) Update Task Capability Filter (admin)
+`PATCH /tasks/:task_id/capabilities`
 
 ### 2) Heartbeat
 `POST /tasks/:task_id/heartbeat`

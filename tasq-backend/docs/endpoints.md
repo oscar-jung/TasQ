@@ -67,6 +67,10 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
   - Handler: `(*server).updateTaskExecutionPolicy` in `internal/server/tasks.go`
   - Purpose: update task execution policy (`max_attempts`).
 
+- `PATCH /tasks/:task_id/capabilities`
+  - Handler: `(*server).updateTaskCapabilities` in `internal/server/tasks.go`
+  - Purpose: update required capability labels for claim filtering.
+
 - `PATCH /tasks/:task_id/content`
   - Handler: `(*server).updateTaskContent` in `internal/server/tasks.go`
   - Purpose: update title/spec/result fields.
@@ -96,6 +100,8 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
   - Handler: `(*server).claimNext` in `internal/server/agents.go`
   - Purpose: atomically claim the next executable task.
   - Includes auto stale-claim reconciliation for the target project before selection.
+  - Optional request field: `capabilities` string array.
+    - If task has non-empty `required_capabilities`, all required values must be included in `capabilities`.
 
 - `POST /tasks/:task_id/heartbeat`
   - Handler: `(*server).heartbeatTaskClaim` in `internal/server/agents.go`

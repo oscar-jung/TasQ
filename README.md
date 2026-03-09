@@ -40,6 +40,7 @@ docker compose up --build
 - `POST /tasks/:id/delete`
 - `PATCH /tasks/:id/status`
 - `PATCH /tasks/:id/execution-policy`
+- `PATCH /tasks/:id/capabilities`
 - `POST /agents/claim-next`
 - `POST /projects/:id/claims/reconcile`
 - `POST /tasks/:id/heartbeat`
@@ -57,6 +58,7 @@ docker compose up --build
 ./scripts/dependency_cycle_race_smoke.sh
 ./scripts/topology_move_reorder_smoke.sh
 ./scripts/lease_reclaim_smoke.sh
+./scripts/capability_claim_smoke.sh
 ```
 
 ## Agent runtime demo
