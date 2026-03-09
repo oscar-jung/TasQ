@@ -217,6 +217,7 @@ Rules:
 - If work may take longer than 60 seconds, send tasq_heartbeat before lease expiry.
 - Save a checkpoint note when you finish a meaningful sub-step or before risky edits/tests.
 - If the task context reports `interrupted_runs`, read the latest interruption reason and resume hint before editing.
+- Prefer `latest_interruption` as the first recovery summary, then inspect the full `interrupted_runs` history if needed.
 - If the task context reports `effective_git_policy="required"`, link a `baseline` git ref before editing and do not complete until a new `produced` ref exists for the current attempt.
 - If claim returns no task, stop cleanly.
 - Finish with tasq_complete_task or tasq_fail_task.

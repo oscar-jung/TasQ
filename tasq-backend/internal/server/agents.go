@@ -889,6 +889,48 @@ func validateGitPolicyCompletionTx(ctx context.Context, tx *sql.Tx, taskID int64
 	return hasBaselineRef, hasCurrentProducedRef, nil
 }
 
+func interruptionMetadata(reason string, hasCheckpoint bool) (string, string, []string) {
+	switch reason {
+	case "lease_expired_reconcile":
+		checklist := []string{
+			"Re-read the latest task context before editing.",
+			"Verify on-disk progress and uncommitted changes before resuming.",
+			"Send a fresh heartbeat after reclaiming the task.",
+		}
+		if hasCheckpoint {
+			checklist = append([]string{"Review the last checkpoint note first."}, checklist...)
+		}
+		return "Lease expired", "warning", checklist
+	case "manual_release":
+		checklist := []string{
+			"Claim the task again before making more changes.",
+			"Review the latest task context and runtime events.",
+		}
+		if hasCheckpoint {
+			checklist = append([]string{"Start from the last checkpoint note."}, checklist...)
+		}
+		return "Released manually", "info", checklist
+	case "manual_invalidate":
+		checklist := []string{
+			"Review parent and dependency results before resuming.",
+			"Re-check the latest task spec and rerun scope.",
+		}
+		if hasCheckpoint {
+			checklist = append([]string{"Compare the old checkpoint against the updated task scope."}, checklist...)
+		}
+		return "Invalidated", "critical", checklist
+	default:
+		checklist := []string{
+			"Inspect the latest task events before continuing.",
+			"Re-read task context and verify workspace state.",
+		}
+		if hasCheckpoint {
+			checklist = append([]string{"Use the last checkpoint note as the recovery starting point."}, checklist...)
+		}
+		return strings.ReplaceAll(reason, "_", " "), "warning", checklist
+	}
+}
+
 // getTaskContext handles GET /tasks/:task_id/context.
 func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID int64) {
 	var ctxOut taskContext
@@ -999,7 +1041,12 @@ func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID i
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		run.ReasonLabel, run.Severity, run.ResumeChecklist = interruptionMetadata(run.Reason, strings.TrimSpace(run.Checkpoint) != "")
 		ctxOut.InterruptedRuns = append(ctxOut.InterruptedRuns, run)
+	}
+	if len(ctxOut.InterruptedRuns) > 0 {
+		latest := ctxOut.InterruptedRuns[0]
+		ctxOut.LatestInterruption = &latest
 	}
 	ctxOut.TaskGitPolicy = ctxOut.Task.GitPolicy
 	ctxOut.ProjectGitPolicy, ctxOut.EffectiveGitPolicy, err = s.fetchProjectAndEffectiveGitPolicy(r.Context(), ctxOut.Task.ProjectID, ctxOut.Task.GitPolicy)

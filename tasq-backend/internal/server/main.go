@@ -183,6 +183,7 @@ type taskContext struct {
 	ParentChain        []task                  `json:"parent_chain"`
 	RecentRuns         []taskRunSummary        `json:"recent_runs"`
 	InterruptedRuns    []interruptedRunSummary `json:"interrupted_runs"`
+	LatestInterruption *interruptedRunSummary  `json:"latest_interruption,omitempty"`
 	GitRefs            []taskGitRefSummary     `json:"git_refs"`
 	ProjectGitPolicy   string                  `json:"project_git_policy"`
 	TaskGitPolicy      string                  `json:"task_git_policy"`
@@ -212,14 +213,17 @@ type taskGitRefSummary struct {
 }
 
 type interruptedRunSummary struct {
-	ID         int64      `json:"id"`
-	AgentID    string     `json:"agent_id"`
-	AttemptNo  int        `json:"attempt_no"`
-	FinishedAt *time.Time `json:"finished_at"`
-	Reason     string     `json:"reason"`
-	ResumeHint string     `json:"resume_hint"`
-	ToStatus   string     `json:"to_status"`
-	Checkpoint string     `json:"checkpoint"`
+	ID              int64      `json:"id"`
+	AgentID         string     `json:"agent_id"`
+	AttemptNo       int        `json:"attempt_no"`
+	FinishedAt      *time.Time `json:"finished_at"`
+	Reason          string     `json:"reason"`
+	ReasonLabel     string     `json:"reason_label"`
+	Severity        string     `json:"severity"`
+	ResumeHint      string     `json:"resume_hint"`
+	ResumeChecklist []string   `json:"resume_checklist"`
+	ToStatus        string     `json:"to_status"`
+	Checkpoint      string     `json:"checkpoint"`
 }
 
 type taskEventSummary struct {

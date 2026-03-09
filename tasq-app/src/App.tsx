@@ -54,7 +54,10 @@ type InterruptedRunSummary = {
   attempt_no: number
   finished_at: string | null
   reason: string
+  reason_label: string
+  severity: 'info' | 'warning' | 'critical'
   resume_hint: string
+  resume_checklist: string[]
   to_status: string
   checkpoint: string
 }
@@ -62,6 +65,7 @@ type InterruptedRunSummary = {
 type TaskContextResponse = {
   recent_runs: TaskRunSummary[]
   interrupted_runs: InterruptedRunSummary[]
+  latest_interruption: InterruptedRunSummary | null
   git_refs: TaskGitRefSummary[]
   project_git_policy: 'optional' | 'required'
   task_git_policy: 'inherit' | 'required' | 'not_required'
@@ -213,33 +217,10 @@ function buildProjectAlertBadge(data: RuntimeAlertsResponse): ProjectAlertBadge 
   }
 }
 
-function describeInterruptedRun(reason: string) {
-  switch (reason) {
-    case 'lease_expired_reconcile':
-      return {
-        label: 'Lease expired',
-        className: 'text-amber-200',
-        hint: 'Previous worker lost its lease. Re-read context and verify on-disk progress before continuing.'
-      }
-    case 'manual_release':
-      return {
-        label: 'Released manually',
-        className: 'text-sky-200',
-        hint: 'The worker intentionally released the task. Claim fresh work before resuming.'
-      }
-    case 'manual_invalidate':
-      return {
-        label: 'Invalidated',
-        className: 'text-rose-200',
-        hint: 'Upstream task or spec changed. Re-check parent and dependency results before editing.'
-      }
-    default:
-      return {
-        label: reason.replaceAll('_', ' '),
-        className: 'text-amber-200',
-        hint: 'Inspect the latest run and task events before continuing.'
-      }
-  }
+function interruptionSeverityClass(severity: InterruptedRunSummary['severity']) {
+  if (severity === 'critical') return 'text-rose-200'
+  if (severity === 'info') return 'text-sky-200'
+  return 'text-amber-200'
 }
 
 function deriveGitRecoveryStatus(
@@ -1116,6 +1097,7 @@ export function App() {
     const raw = (await res.json()) as {
       recent_runs?: TaskRunSummary[] | null
       interrupted_runs?: InterruptedRunSummary[] | null
+      latest_interruption?: InterruptedRunSummary | null
       git_refs?: TaskGitRefSummary[] | null
       project_git_policy?: 'optional' | 'required'
       task_git_policy?: 'inherit' | 'required' | 'not_required'
@@ -1125,7 +1107,33 @@ export function App() {
     }
     return {
       recent_runs: Array.isArray(raw.recent_runs) ? raw.recent_runs : [],
-      interrupted_runs: Array.isArray(raw.interrupted_runs) ? raw.interrupted_runs : [],
+      interrupted_runs: Array.isArray(raw.interrupted_runs)
+        ? raw.interrupted_runs.map((run) => ({
+            ...run,
+            reason_label: typeof run.reason_label === 'string' && run.reason_label ? run.reason_label : run.reason,
+            severity:
+              run.severity === 'critical' || run.severity === 'info'
+                ? run.severity
+                : 'warning',
+            resume_checklist: Array.isArray(run.resume_checklist) ? run.resume_checklist : []
+          }))
+        : [],
+      latest_interruption: raw.latest_interruption
+        ? {
+            ...raw.latest_interruption,
+            reason_label:
+              typeof raw.latest_interruption.reason_label === 'string' && raw.latest_interruption.reason_label
+                ? raw.latest_interruption.reason_label
+                : raw.latest_interruption.reason,
+            severity:
+              raw.latest_interruption.severity === 'critical' || raw.latest_interruption.severity === 'info'
+                ? raw.latest_interruption.severity
+                : 'warning',
+            resume_checklist: Array.isArray(raw.latest_interruption.resume_checklist)
+              ? raw.latest_interruption.resume_checklist
+              : []
+          }
+        : null,
       git_refs: Array.isArray(raw.git_refs) ? raw.git_refs : [],
       project_git_policy: raw.project_git_policy === 'required' ? 'required' : 'optional',
       task_git_policy:
@@ -2863,6 +2871,30 @@ export function App() {
 
                         <div>
                           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Interrupted Runs</p>
+                          {taskContext.latest_interruption && (
+                            <div className="mt-1 rounded-md border bg-background/50 p-2 text-xs">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="font-medium text-foreground/90">Latest recovery brief</p>
+                                <span
+                                  className={`uppercase ${interruptionSeverityClass(
+                                    taskContext.latest_interruption.severity
+                                  )}`}
+                                >
+                                  {taskContext.latest_interruption.reason_label}
+                                </span>
+                              </div>
+                              {taskContext.latest_interruption.resume_hint && (
+                                <p className="mt-1 text-muted-foreground">{taskContext.latest_interruption.resume_hint}</p>
+                              )}
+                              {taskContext.latest_interruption.resume_checklist.length > 0 && (
+                                <ul className="mt-2 space-y-1 text-muted-foreground">
+                                  {taskContext.latest_interruption.resume_checklist.map((item, index) => (
+                                    <li key={`${taskContext.latest_interruption?.id}-resume-${index}`}>- {item}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          )}
                           {taskContext.interrupted_runs.length === 0 && (
                             <p className="mt-1 text-xs text-muted-foreground">No interrupted runs recorded.</p>
                           )}
@@ -2870,18 +2902,22 @@ export function App() {
                             <div className="mt-1 max-h-32 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
                               {taskContext.interrupted_runs.map((run) => (
                                 <div key={run.id} className="rounded border border-border/60 bg-background/50 p-2 text-xs">
-                                  {(() => {
-                                    const reasonMeta = describeInterruptedRun(run.reason)
-                                    return (
-                                      <>
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="truncate text-foreground/90">
                                       #{run.attempt_no} {run.agent_id}
                                     </span>
-                                    <span className={`uppercase ${reasonMeta.className}`}>{reasonMeta.label}</span>
+                                    <span className={`uppercase ${interruptionSeverityClass(run.severity)}`}>
+                                      {run.reason_label}
+                                    </span>
                                   </div>
-                                  <p className="mt-1 text-muted-foreground">{reasonMeta.hint}</p>
                                   {run.resume_hint && <p className="mt-1 text-muted-foreground">{run.resume_hint}</p>}
+                                  {run.resume_checklist.length > 0 && (
+                                    <ul className="mt-2 space-y-1 text-[11px] text-muted-foreground">
+                                      {run.resume_checklist.map((item, index) => (
+                                        <li key={`${run.id}-check-${index}`}>- {item}</li>
+                                      ))}
+                                    </ul>
+                                  )}
                                   {run.checkpoint && (
                                     <p className="mt-1 text-[11px] text-muted-foreground">
                                       Last checkpoint: {run.checkpoint}
@@ -2890,9 +2926,6 @@ export function App() {
                                   {run.to_status && (
                                     <p className="mt-1 text-[11px] text-muted-foreground">Released to: {run.to_status}</p>
                                   )}
-                                      </>
-                                    )
-                                  })()}
                                 </div>
                               ))}
                             </div>
