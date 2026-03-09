@@ -118,6 +118,8 @@ mkdir -p "${LOG_DIR}"
 PIDS=()
 WORKER_LABELS=()
 WORKER_SPECS_JSON="$(jq -c '.workers' "${SPEC_FILE}")"
+PREV_RUNTIME_SUMMARY=""
+PREV_DONE_IDS=""
 
 print_runtime_summary() {
   local runtime_json="$1"
@@ -129,6 +131,53 @@ print_runtime_summary() {
   blocked="$(echo "${runtime_json}" | jq -r '.blocked_planned_tasks')"
   exhausted="$(echo "${runtime_json}" | jq -r '.exhausted_tasks | length')"
   echo "[runtime] total=${total} done=${done} unfinished=${unfinished} claimable=${claimable} blocked=${blocked} exhausted=${exhausted}"
+}
+
+fetch_tasks_json() {
+  curl -sS "${API_BASE}/projects/${PROJECT_ID}/tasks" 2>/dev/null
+}
+
+print_progress_snapshot() {
+  local runtime_json="$1"
+  local tasks_json="$2"
+  local summary active_titles done_ids newly_done active_count claimable blocked
+
+  summary="$(echo "${runtime_json}" | jq -r '[.total_tasks, .done_tasks, .unfinished_tasks, .claimable_tasks, .blocked_planned_tasks, (.exhausted_tasks|length)] | @tsv')"
+  if [[ "${summary}" == "${PREV_RUNTIME_SUMMARY}" ]]; then
+    return
+  fi
+  PREV_RUNTIME_SUMMARY="${summary}"
+
+  print_runtime_summary "${runtime_json}"
+
+  active_titles="$(echo "${tasks_json}" | jq -r '[.[] | select(.status == "in_progress") | "T#\(.id) \(.title)"] | join(" | ")')"
+  active_count="$(echo "${tasks_json}" | jq -r '[.[] | select(.status == "in_progress")] | length')"
+  claimable="$(echo "${runtime_json}" | jq -r '.claimable_tasks')"
+  blocked="$(echo "${runtime_json}" | jq -r '.blocked_planned_tasks')"
+
+  if [[ "${active_count}" -gt 0 ]]; then
+    echo "[active] ${active_titles}"
+  fi
+
+  done_ids="$(echo "${tasks_json}" | jq -r '[.[] | select(.status == "done") | .id] | sort | join(\",\")')"
+  newly_done="$(jq -nr --arg prev "${PREV_DONE_IDS}" --arg curr "${done_ids}" '
+    (($prev | split(",") | map(select(length > 0) | tonumber)) // []) as $p
+    | (($curr | split(",") | map(select(length > 0) | tonumber)) // []) as $c
+    | ($c - $p)
+    | @json
+  ')"
+  if [[ "${newly_done}" != "[]" ]]; then
+    echo "[done] $(echo "${tasks_json}" | jq -r --argjson ids "${newly_done}" '[.[] | select(.id as $id | ($ids | index($id))) | "T#\(.id) \(.title)"] | join(" | ")')"
+  fi
+  PREV_DONE_IDS="${done_ids}"
+
+  if [[ "${claimable}" -eq 0 && "${active_count}" -gt 0 ]]; then
+    echo "[wait] no parallel claimable task right now; other work is blocked behind active task completion"
+  elif [[ "${claimable}" -gt 0 ]]; then
+    echo "[ready] ${claimable} task(s) are currently claimable"
+  elif [[ "${blocked}" -gt 0 ]]; then
+    echo "[blocked] ${blocked} planned task(s) are still waiting on parents or dependencies"
+  fi
 }
 
 worker_can_cover_caps() {
@@ -333,7 +382,12 @@ while true; do
     continue
   fi
   api_failures=0
-  print_runtime_summary "${runtime_json}"
+  tasks_json="$(fetch_tasks_json || true)"
+  if [[ -n "${tasks_json}" ]]; then
+    print_progress_snapshot "${runtime_json}" "${tasks_json}"
+  else
+    print_runtime_summary "${runtime_json}"
+  fi
 
   exhausted_count="$(echo "${runtime_json}" | jq -r '.exhausted_tasks | length')"
   unfinished_count="$(echo "${runtime_json}" | jq -r '.unfinished_tasks')"

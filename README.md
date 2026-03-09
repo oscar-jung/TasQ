@@ -131,7 +131,7 @@ Planner sessions should emit a worker spawn spec JSON file and then launch:
 ```
 
 If the planner did not generate `workers.json`, you can bootstrap one manually from:
-- [examples/workers.sample.json](/path/to//tasq/examples/workers.sample.json)
+- `examples/workers.sample.json`
 
 Spawner behavior:
 - starts one `codex exec` worker session per worker spec
@@ -140,6 +140,8 @@ Spawner behavior:
 - stops immediately when any task has exhausted `max_attempts`
 - refuses to start when `plan_state` is not `approved`
 - refuses to start when `execution_mode` is `manual`
+- on normal exit, `Ctrl+C`, or `TERM`, it also kills the worker child processes it started
+- on hard termination such as `kill -9`, child workers may survive and need manual cleanup
 
 ## Plan approval and execution modes
 TasQ separates plan review from agent execution at the project level.

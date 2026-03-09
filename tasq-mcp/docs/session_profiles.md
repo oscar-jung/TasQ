@@ -129,3 +129,5 @@ Supervisor stop rules:
 - queue drained: exit success
 - exhausted tasks (`max_attempts` reached): stop immediately and require human intervention
 - no workers alive and nothing claimable for multiple polls: stop and surface likely capability/dependency blockage
+- when the supervisor exits normally or receives `INT`/`TERM`, it also kills the worker child processes it spawned
+- this does not protect against hard process termination such as `kill -9`

@@ -9,7 +9,11 @@ Create a project and actionable task tree for:
 
 Rules:
 - Use TasQ MCP tools to create one project, root tasks, child tasks, and dependency edges.
-- For agent-driven code projects, create the project with `git_policy="required"` unless there is a concrete reason not to.
+- For agent-driven code projects, create the project with:
+  - `git_policy="required"`
+  - `execution_mode="agent_assisted"`
+  - `plan_state="draft"`
+- If the plan will use multiple workers, keep the tree vertically structured within each stream but make sure there are enough independent root-level streams to keep those workers busy after approval.
 - Keep tasks small enough for one focused worker run.
 - Use required_capabilities sparingly.
 - Keep at least one root task immediately claimable by a generic worker.
@@ -21,7 +25,7 @@ Rules:
 - Suggested generic labels: go, cli, integration, testing, docs, frontend, backend, db.
 - Do not implement code in this session.
 - At the end, report the numeric project_id.
-- Also create a workers.json file in the current workspace based on examples/workers.sample.json.
+- Also create a workers.json file in the current workspace.
 - Ensure the file conforms to schemas/workers.schema.json.
 - Fill workers.json with:
   - the actual numeric project_id

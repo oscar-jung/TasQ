@@ -30,6 +30,9 @@ Rules:
 - Use TasQ MCP tools to create the project, root tasks, child tasks, and dependency edges.
 - Keep tasks small enough for one focused worker run.
 - Keep at least one root task immediately claimable after approval.
+- For this demo, create at least two root-level execution streams that can run in parallel after approval:
+  - one stream that matches capabilities `["go","cli","docs"]`
+  - one stream that matches capabilities `["go","integration","testing","docs"]`
 - Prefer vertical decomposition when tasks touch the same files or modules.
 - Use generic capabilities unless specialized routing is clearly needed.
 - Create a workers.json file in the current workspace that conforms to schemas/workers.schema.json.
@@ -56,3 +59,4 @@ Expected behavior:
 - git-required tasks must link `baseline` before editing
 - completed code work should link `produced`
 - reruns should create and link `rerun_branch`
+- if the spawner exits normally or via `Ctrl+C`, it also terminates the worker child processes it started

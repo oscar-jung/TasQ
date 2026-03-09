@@ -130,7 +130,7 @@ SSE 이벤트 타입:
 ```
 
 만약 planner가 `workers.json`을 만들지 못했다면, 아래 샘플을 수동 부트스트랩 용도로 사용할 수 있습니다.
-- [examples/workers.sample.json](/path/to//tasq/examples/workers.sample.json)
+- `examples/workers.sample.json`
 
 스포너 동작:
 - worker spec마다 `codex exec` 워커 세션 1개씩 실행
@@ -139,6 +139,8 @@ SSE 이벤트 타입:
 - 어떤 태스크든 `max_attempts`를 소진하면 즉시 중단
 - `plan_state`가 `approved`가 아니면 시작하지 않음
 - `execution_mode`가 `manual`이면 시작하지 않음
+- 정상 종료, `Ctrl+C`, `TERM` 시에는 자신이 띄운 worker child process도 함께 정리함
+- `kill -9` 같은 강제 종료에서는 child worker가 남을 수 있어 수동 정리가 필요할 수 있음
 
 ## 플랜 승인과 실행 모드
 TasQ는 project 레벨에서 계획 검토와 agent 실행을 분리한다.
