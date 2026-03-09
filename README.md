@@ -5,6 +5,11 @@
 TasQ is a self-hosted task orchestration tool for human + AI execution.
 It is built for workflows where you plan once, split into actionable tasks, and run tasks concurrently with AI agents.
 
+## Status
+- Stable today: human planning, human-in-the-loop task management, task tree editing, runtime inspection, rerun/invalidate controls.
+- WIP: MCP-driven agent execution, worker spawning, and Git-assisted recovery workflows.
+- Practical guidance: use the agent path for smaller, well-bounded tasks for now. Treat the manual planning path as the reliable default.
+
 ## Who this is for
 - You use tools like Codex CLI / Gemini CLI and want visible task-level progress.
 - You want to intervene safely while agents are working in parallel.
@@ -58,7 +63,7 @@ docker compose up --build
 - DB: localhost:5432
 - MCP (HTTP): http://localhost:8091/mcp
 
-## Codex MCP setup
+## Codex MCP setup (WIP)
 For the current Codex CLI environment, prefer the HTTP MCP transport over stdio.
 
 ```bash
@@ -71,6 +76,29 @@ codex mcp add tasq-http --url http://localhost:8091/mcp
 - Operations guide: `tasq-backend/docs/operations.md`
 - Release checklist: `tasq-backend/docs/release_checklist.md`
 - MCP session profiles: `tasq-mcp/docs/session_profiles.md`
+
+## Why the MCP / agent path is still WIP
+TasQ can already plan projects, expose claimable tasks, track leases and heartbeats, and let Codex-style workers execute through MCP. The unstable part is not the project/task model itself. The unstable part is the execution plane around the agents.
+
+Current reasons it remains WIP:
+- worker processes are still launched through CLI-centric supervision rather than a dedicated runner service
+- long-running tasks still depend on lease/heartbeat/checkpoint recovery instead of a hardened durable execution layer
+- rerun and invalidate flows reset TasQ state, but workspace rollback is still manual Git guidance rather than an automated action plane
+- MCP and agent runtime behavior can still be sensitive to client/runtime quirks outside TasQ itself
+- the web UI can inspect and steer execution, but it does not yet directly host or manage worker processes
+
+What this means in practice:
+- human planning projects are ready to use
+- AI-assisted planning with human review is ready to use
+- agent execution works best today for narrow coding tasks with clear Git boundaries
+- larger autonomous runs should still be treated as supervised experiments, not fully stable automation
+
+Technical direction:
+- add a dedicated runner/orchestrator service for durable worker lifecycle management
+- harden reconnect, long-running command handling, and partial-progress handoff
+- move from “Git recovery guidance” to explicit, safer action flows with confirmation gates
+- add a stronger web control plane so users can approve, dispatch, rerun, and recover work without dropping back into terminal-heavy supervision
+- preserve manual-only workflows as a first-class mode even when agent execution is disabled
 
 ## Runtime monitoring
 - Project list badge (left panel):
@@ -123,7 +151,7 @@ UI refresh behavior:
 Design note:
 - deletion uses `project-signal` because `task_events` rows cascade with the deleted task and are not a reliable transport for post-delete UI updates
 
-## Worker supervisor
+## Worker supervisor (WIP)
 Planner sessions should emit a worker spawn spec JSON file and then launch:
 
 ```bash
@@ -143,6 +171,7 @@ Spawner behavior:
 - refuses to start when `execution_mode` is `manual`
 - on normal exit, `Ctrl+C`, or `TERM`, it also kills the worker child processes it started
 - on hard termination such as `kill -9`, child workers may survive and need manual cleanup
+- this is intentionally treated as a transitional execution path, not the final production-grade runner model
 
 ## Plan approval and execution modes
 TasQ separates plan review from agent execution at the project level.
@@ -243,7 +272,7 @@ Before starting workers:
 - change `plan_state` to `approved`
 - keep `execution_mode` in an agent mode
 
-### 2) Start workers automatically
+### 2) Start workers automatically (WIP)
 Preferred path:
 ```bash
 ./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
@@ -256,7 +285,7 @@ cp ./examples/workers.sample.json /abs/path/to/workers.json
 ./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
 ```
 
-### 3) Manual worker prompt
+### 3) Manual worker prompt (WIP)
 If you want to run one worker manually instead of the spawner:
 
 ```text
@@ -298,7 +327,7 @@ For reruns, prefer a branch-first workflow:
 - In Task Detail, prefer the server-provided `git_recovery` summary over ad hoc interpretation when deciding whether rerun metadata is complete.
 ```
 
-## Agent runtime demo
+## Agent runtime demo (WIP)
 ```bash
 PROJECT_ID=1 ./scripts/agent_worker_demo.sh
 PROJECT_ID=1 ACTION=fail ./scripts/agent_worker_demo.sh
@@ -342,7 +371,7 @@ Expected behavior:
 ## Manual planning demo
 If you want planner-generated structure without worker execution, use [docs/demo_manual_plan_only.md](/path/to//tasq/docs/demo_manual_plan_only.md).
 
-## Run the agent + Git demo
+## Run the agent + Git demo (WIP)
 Use this flow when you want TasQ to manage both planning and agent execution for a code project.
 
 1. Start the services.
@@ -391,6 +420,12 @@ Expected behavior:
 - successful code tasks should link `produced`
 - rerun flows should link `rerun_branch`
 
+Current WIP expectations:
+- small implementation tasks are the best fit
+- you should expect occasional manual intervention during runtime recovery
+- Git recovery guidance is available, but actual workspace rollback is still manual
+- if you need maximum stability today, keep execution manual and use TasQ mainly for planning, tracking, and review
+
 ## Smoke and regression tests
 ```bash
 ./scripts/claim_concurrency_smoke.sh
@@ -412,5 +447,7 @@ Expected behavior:
 - `AUTH_TOKENS`: JSON array token map with actor/scopes/project scopes
 
 ## Next implementation targets
-- Dependency graph visualization
+- Dedicated action plane / runner service for durable worker execution
+- Safer Git-aware recovery actions from the web control plane
+- Stronger runtime robustness for long-running agent tasks
 - Dashboard-level runtime alert summaries

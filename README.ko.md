@@ -4,6 +4,11 @@
 
 TasQ는 사람과 AI가 함께 작업할 때, 계획과 실행을 분리해서 안전하게 운영하도록 만든 셀프 호스팅 도구입니다.
 
+## 현재 상태
+- 지금 안정적으로 쓸 수 있는 경로: 사람 중심 계획 수립, 사람이 개입하는 태스크 관리, 트리 수정, 런타임 관찰, rerun/invalidate.
+- 아직 WIP로 봐야 하는 경로: MCP 기반 에이전트 실행, worker spawning, Git 보조 복구 흐름.
+- 실전 기준 권장: 에이전트 경로는 작고 경계가 분명한 태스크에 우선 적용하고, 기본 사용 경로는 수동 플랜/사람 중심 운영으로 두는 편이 안정적입니다.
+
 ## 이런 사용자에게 적합합니다
 - Codex CLI, Gemini CLI 같은 에이전트를 실제 개발에 쓰는 경우
 - 병렬 실행 상태를 태스크 단위로 눈에 보이게 관리하고 싶은 경우
@@ -57,7 +62,7 @@ docker compose up --build
 - DB: localhost:5432
 - MCP (HTTP): http://localhost:8091/mcp
 
-## Codex MCP 설정
+## Codex MCP 설정 (WIP)
 현재 Codex CLI 환경에서는 stdio 대신 HTTP MCP transport 사용을 권장합니다.
 
 ```bash
@@ -70,6 +75,29 @@ codex mcp add tasq-http --url http://localhost:8091/mcp
 - 운영 가이드: `tasq-backend/docs/operations.md`
 - 릴리즈 체크리스트: `tasq-backend/docs/release_checklist.md`
 - MCP 세션 프로파일: `tasq-mcp/docs/session_profiles.md`
+
+## MCP / 에이전트 경로가 아직 WIP인 이유
+TasQ는 이미 프로젝트 계획, claim 가능한 태스크 노출, lease/heartbeat 추적, MCP를 통한 Codex 스타일 worker 실행까지는 지원합니다. 아직 불안정한 부분은 프로젝트/태스크 모델이 아니라, 그 주변의 실행 plane입니다.
+
+현재 WIP로 보는 이유:
+- worker 프로세스가 아직 전용 runner service가 아니라 CLI 중심 스포너에 의존합니다
+- 긴 작업은 여전히 lease/heartbeat/checkpoint 복구에 기대고 있고, durable execution layer가 충분히 강하지 않습니다
+- rerun/invalidate는 TasQ 상태를 되돌리지만, 워크스페이스 복구는 아직 자동 action plane이 아니라 수동 Git 절차 안내에 가깝습니다
+- MCP 및 에이전트 런타임은 TasQ 바깥의 클라이언트/runtime 특성에도 영향을 받습니다
+- 웹 UI는 상태를 관찰하고 제어할 수 있지만, 아직 worker 프로세스를 직접 호스팅하거나 지속적으로 관리하지는 못합니다
+
+실무적으로는 이렇게 보는 게 맞습니다:
+- 사람 중심 계획 프로젝트는 바로 써도 됩니다
+- AI가 계획을 짜고 사람이 승인하는 흐름도 충분히 쓸 만합니다
+- 에이전트 실행은 작은 코드 태스크에서는 이미 유효합니다
+- 하지만 큰 autonomous run은 아직 “안정적 자동화”보다는 “감독 가능한 실험”에 가깝습니다
+
+기술적으로 앞으로 보강할 방향:
+- 전용 runner/orchestrator service를 추가해 durable worker lifecycle을 관리
+- reconnect, long-running command, partial progress handoff를 더 안정화
+- Git recovery guidance를 명시적 확인 절차가 있는 action flow로 확장
+- 웹 control plane을 강화해서 approval, dispatch, rerun, recovery를 더 직접적으로 수행
+- agent를 끄더라도 manual-only 프로젝트가 1급 경로로 유지되도록 설계 지속
 
 ## 런타임 모니터링
 - 좌측 프로젝트 배지:
@@ -122,7 +150,7 @@ SSE 이벤트 타입:
 설계 메모:
 - 삭제는 `task_events` row가 FK cascade로 함께 사라질 수 있기 때문에, post-delete UI 갱신 신호로는 `project-signal`을 사용합니다
 
-## 워커 스포너
+## 워커 스포너 (WIP)
 플래너 세션은 worker spawn spec JSON 파일을 만들고, 이후 아래 스크립트를 실행하면 됩니다.
 
 ```bash
@@ -142,6 +170,7 @@ SSE 이벤트 타입:
 - `execution_mode`가 `manual`이면 시작하지 않음
 - 정상 종료, `Ctrl+C`, `TERM` 시에는 자신이 띄운 worker child process도 함께 정리함
 - `kill -9` 같은 강제 종료에서는 child worker가 남을 수 있어 수동 정리가 필요할 수 있음
+- 즉, 현재 스포너는 유용한 실행 경로이지만 최종 형태의 production-grade runner는 아닙니다
 
 ## 플랜 승인과 실행 모드
 TasQ는 project 레벨에서 계획 검토와 agent 실행을 분리한다.
@@ -242,7 +271,7 @@ worker 시작 전에는:
 - `plan_state`를 `approved`로 바꾸고
 - `execution_mode`가 agent 모드인지 확인해
 
-### 2) 워커 자동 실행
+### 2) 워커 자동 실행 (WIP)
 기본 경로:
 ```bash
 ./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
@@ -255,7 +284,7 @@ cp ./examples/workers.sample.json /abs/path/to/workers.json
 ./scripts/spawn_workers.sh --spec-file /abs/path/to/workers.json
 ```
 
-### 3) 수동 워커 프롬프트
+### 3) 수동 워커 프롬프트 (WIP)
 스포너 대신 워커 하나를 직접 띄우고 싶다면 아래 프롬프트를 사용하면 됩니다.
 
 ```text
@@ -297,7 +326,7 @@ rerun 시에는 branch-first 전략을 권장해:
 - rerun 메타데이터가 충분한지 판단할 때는 임의 추정보다 Task Detail의 서버 제공 `git_recovery` 요약을 우선 기준으로 봐.
 ```
 
-## 에이전트 데모 실행
+## 에이전트 데모 실행 (WIP)
 ```bash
 PROJECT_ID=1 ./scripts/agent_worker_demo.sh
 PROJECT_ID=1 ACTION=fail ./scripts/agent_worker_demo.sh
@@ -341,7 +370,7 @@ codex
 ## 수동 플랜 데모
 worker 없이 planner가 만든 구조만 쓰고 싶다면 [docs/demo_manual_plan_only.md](/path/to//tasq/docs/demo_manual_plan_only.md)를 참고해.
 
-## 에이전트 + Git 데모 실행 방법
+## 에이전트 + Git 데모 실행 방법 (WIP)
 planner가 project와 tree를 만들고, 승인 후 worker가 실제 코드 작업까지 수행하는 흐름이다.
 
 1. 서비스를 띄운다.
@@ -389,6 +418,12 @@ cd /path/to//tasq
 - 성공한 코드 task는 `produced`를 남겨야 한다
 - rerun 흐름에서는 `rerun_branch`를 링크하는 것이 맞다
 
+현재는 다음 기대치를 두는 것이 맞습니다:
+- 작은 구현 태스크일수록 잘 맞습니다
+- 런타임 복구 시 사람의 수동 개입이 중간중간 필요할 수 있습니다
+- Git recovery guidance는 제공되지만, 실제 워크스페이스 되돌리기는 아직 수동 절차입니다
+- 지금 당장 가장 안정적인 사용법은 “TasQ로 계획/추적/검토를 하고, 실행은 제한적으로 에이전트를 붙이는 방식”입니다
+
 ## 스모크/회귀 테스트
 ```bash
 ./scripts/claim_concurrency_smoke.sh
@@ -410,5 +445,7 @@ cd /path/to//tasq
 - `AUTH_TOKENS`: actor/scopes/project 범위를 담은 JSON 배열
 
 ## 다음 구현 후보
-- Dependency 그래프 시각화
+- durable worker 실행을 위한 전용 action plane / runner service
+- 웹 control plane에서 더 안전하게 수행하는 Git-aware recovery actions
+- 장시간 agent task에 대한 런타임 안정성 강화
 - 대시보드 수준의 런타임 알림 요약
