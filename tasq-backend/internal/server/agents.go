@@ -358,6 +358,10 @@ func (s *server) completeTask(w http.ResponseWriter, r *http.Request, taskID int
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := validateResultMarkdown(req.ResultMD); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	tx, err := s.db.BeginTx(r.Context(), nil)
 	if err != nil {
@@ -448,6 +452,10 @@ func (s *server) failTask(w http.ResponseWriter, r *http.Request, taskID int64) 
 	}
 	resultPayload, err := parseRequiredResultPayload(req.ResultJSON, req.ResultPayloadVersion)
 	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validateResultMarkdown(req.ResultMD); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -661,11 +669,40 @@ func requireStringArray(payload map[string]any, key string) error {
 	if !ok {
 		return fmt.Errorf("result_payload.%s must be an array of strings", key)
 	}
+	if len(items) == 0 {
+		return fmt.Errorf("result_payload.%s must contain at least one entry", key)
+	}
 	for idx, item := range items {
 		s, ok := item.(string)
 		if !ok || strings.TrimSpace(s) == "" {
 			return fmt.Errorf("result_payload.%s[%d] must be a non-empty string", key, idx)
 		}
+	}
+	return nil
+}
+
+func validateResultMarkdown(resultMD string) error {
+	trimmed := strings.TrimSpace(resultMD)
+	if trimmed == "" {
+		return fmt.Errorf("result_md is required and must use the handoff template")
+	}
+	if len([]rune(trimmed)) < 80 {
+		return fmt.Errorf("result_md must be detailed enough for handoff (minimum 80 characters)")
+	}
+	requiredSections := []string{
+		"## Summary",
+		"## Changes",
+		"## Verification",
+		"## Risks",
+	}
+	missing := make([]string, 0)
+	for _, section := range requiredSections {
+		if !strings.Contains(trimmed, section) {
+			missing = append(missing, section)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("result_md must include sections: %s", strings.Join(missing, ", "))
 	}
 	return nil
 }

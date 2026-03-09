@@ -145,6 +145,11 @@ type updateTaskCapabilitiesReq struct {
 	RequiredCapabilities []string `json:"required_capabilities"`
 }
 
+type invalidateTaskReq struct {
+	Scope         string `json:"scope"`
+	ClearResultMD bool   `json:"clear_result_md"`
+}
+
 type linkTaskGitRefReq struct {
 	Repo       string `json:"repo"`
 	Branch     string `json:"branch"`
@@ -520,6 +525,14 @@ func (s *server) tasksSubrouter(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.deleteTask(w, r, taskID)
+			return
+		}
+	case "invalidate":
+		if r.Method == http.MethodPost {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "task:admin", true); !ok {
+				return
+			}
+			s.invalidateTask(w, r, taskID)
 			return
 		}
 	case "execution-policy":

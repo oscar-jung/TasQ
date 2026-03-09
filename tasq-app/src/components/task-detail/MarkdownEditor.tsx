@@ -6,6 +6,8 @@ export function MarkdownEditor({
   value,
   onChange,
   onSave,
+  onInsertTemplate,
+  templateButtonLabel = 'Insert template',
   isSaving,
   minHeightClassName = 'min-h-[140px]'
 }: {
@@ -13,6 +15,8 @@ export function MarkdownEditor({
   value: string
   onChange: (next: string) => void
   onSave: () => void
+  onInsertTemplate?: () => void
+  templateButtonLabel?: string
   isSaving: boolean
   minHeightClassName?: string
 }) {
@@ -41,6 +45,11 @@ export function MarkdownEditor({
       <div className="flex items-center justify-between border-b border-border/70 px-3 py-2">
         <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
         <div className="flex items-center gap-2">
+          {onInsertTemplate && (
+            <Button size="sm" variant="ghost" disabled={isSaving} onClick={onInsertTemplate}>
+              {templateButtonLabel}
+            </Button>
+          )}
           <div className="flex rounded-md border border-border/70 bg-background/40 p-0.5">
             <button
               type="button"

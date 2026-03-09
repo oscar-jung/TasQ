@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -733,6 +734,173 @@ func (s *server) deleteTask(w http.ResponseWriter, r *http.Request, taskID int64
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "strategy": req.Strategy})
 }
 
+// invalidateTask resets a task scope back to planned for explicit reruns.
+func (s *server) invalidateTask(w http.ResponseWriter, r *http.Request, taskID int64) {
+	var req invalidateTaskReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Scope) == "" {
+		req.Scope = "both"
+	}
+	req.Scope = strings.ToLower(strings.TrimSpace(req.Scope))
+	if req.Scope != "subtree" && req.Scope != "downstream" && req.Scope != "both" {
+		http.Error(w, "invalid scope", http.StatusBadRequest)
+		return
+	}
+
+	tx, err := s.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	var projectID int64
+	if err := tx.QueryRowContext(r.Context(), `
+		SELECT project_id
+		FROM tasks
+		WHERE id = $1
+		FOR UPDATE`, taskID).Scan(&projectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "task not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := lockProjectTopology(r.Context(), tx, projectID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	targets, err := collectInvalidationTargets(r.Context(), tx, taskID, req.Scope)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if len(targets) == 0 {
+		http.Error(w, "no tasks matched invalidation scope", http.StatusBadRequest)
+		return
+	}
+
+	rows, err := tx.QueryContext(r.Context(), `
+		SELECT id, title, status
+		FROM tasks
+		WHERE id = ANY($1)
+		ORDER BY display_order ASC, created_at ASC
+		FOR UPDATE`, pq.Array(targets))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	type invalidationTarget struct {
+		ID     int64
+		Title  string
+		Status string
+	}
+	targetDetails := make([]invalidationTarget, 0, len(targets))
+	for rows.Next() {
+		var item invalidationTarget
+		if err := rows.Scan(&item.ID, &item.Title, &item.Status); err != nil {
+			rows.Close()
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		targetDetails = append(targetDetails, item)
+	}
+	rows.Close()
+
+	if _, err := tx.ExecContext(r.Context(), `
+		UPDATE task_claims
+		SET status = 'released',
+			released_at = NOW()
+		WHERE task_id = ANY($1)
+		  AND status = 'active'`, pq.Array(targets)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	invalidatePayloadJSON, err := json.Marshal(map[string]any{
+		"scope":           req.Scope,
+		"clear_result_md": req.ClearResultMD,
+		"invalidated_by":  taskID,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if _, err := tx.ExecContext(r.Context(), `
+		UPDATE task_runs
+		SET status = 'released',
+			finished_at = NOW(),
+			result_payload_json = COALESCE(result_payload_json, $2::jsonb)
+		WHERE task_id = ANY($1)
+		  AND status = 'running'`, pq.Array(targets), string(invalidatePayloadJSON)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	updateQuery := `
+		UPDATE tasks
+		SET status = 'planned',
+			started_at = NULL,
+			done_at = NULL,
+			updated_at = NOW()`
+	if req.ClearResultMD {
+		updateQuery += `,
+			result_md = ''`
+	}
+	updateQuery += `
+		WHERE id = ANY($1)`
+	if _, err := tx.ExecContext(r.Context(), updateQuery, pq.Array(targets)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	actorType, actorID := actorForEvent(r)
+	for _, item := range targetDetails {
+		if err := logEvent(r.Context(), tx, item.ID, "task.invalidated", actorType, actorID, map[string]any{
+			"root_task_id":     taskID,
+			"scope":            req.Scope,
+			"clear_result_md":  req.ClearResultMD,
+			"previous_status":  item.Status,
+			"previous_title":   item.Title,
+			"affected_task_id": item.ID,
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	s.maybeRunTreeGuard(r.Context(), projectID)
+	s.streamBroker.publish(projectSignal{
+		ProjectID: projectID,
+		TaskID:    &taskID,
+		EventType: "task.invalidated",
+		CreatedAt: time.Now().UTC(),
+		Payload: map[string]any{
+			"scope":             req.Scope,
+			"clear_result_md":   req.ClearResultMD,
+			"affected_task_ids": targets,
+		},
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":                true,
+		"scope":             req.Scope,
+		"affected_task_ids": targets,
+	})
+}
+
 // areDependenciesDone validates status transition preconditions.
 func areDependenciesDone(ctx context.Context, tx *sql.Tx, taskID int64) (bool, error) {
 	var missing int
@@ -1102,6 +1270,60 @@ func normalizeCapabilities(in []string) []string {
 		out = append(out, clean)
 	}
 	return out
+}
+
+// collectInvalidationTargets expands a rerun scope to concrete task ids.
+func collectInvalidationTargets(ctx context.Context, tx *sql.Tx, taskID int64, scope string) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx, `
+		WITH RECURSIVE
+		subtree AS (
+			SELECT id
+			FROM tasks
+			WHERE id = $1
+			UNION ALL
+			SELECT t.id
+			FROM tasks t
+			JOIN subtree s ON t.parent_task_id = s.id
+		),
+		downstream_seed AS (
+			SELECT $1::bigint AS id
+			WHERE $2 IN ('downstream')
+			UNION
+			SELECT id
+			FROM subtree
+			WHERE $2 = 'both'
+		),
+		downstream AS (
+			SELECT td.successor_task_id AS id
+			FROM task_dependencies td
+			JOIN downstream_seed seed ON seed.id = td.predecessor_task_id
+			UNION
+			SELECT td.successor_task_id
+			FROM task_dependencies td
+			JOIN downstream d ON d.id = td.predecessor_task_id
+		),
+		targets AS (
+			SELECT id FROM subtree WHERE $2 IN ('subtree', 'both')
+			UNION
+			SELECT id FROM downstream
+		)
+		SELECT id
+		FROM targets
+		ORDER BY id ASC`, taskID, scope)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	targets := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		targets = append(targets, id)
+	}
+	return targets, rows.Err()
 }
 
 // nullableTaskIDEqual compares nullable parent ids.

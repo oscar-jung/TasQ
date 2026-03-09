@@ -27,6 +27,7 @@ type TaskContentPatch = {
 }
 
 type TaskDeleteStrategy = 'promote_children' | 'delete_subtree'
+type TaskInvalidateScope = 'subtree' | 'downstream' | 'both'
 type TaskRunSummary = {
   id: number
   agent_id: string
@@ -265,6 +266,9 @@ export function App() {
   const [addChildError, setAddChildError] = useState('')
   const [deleteModal, setDeleteModal] = useState<{ task: TaskNode; strategy: TaskDeleteStrategy } | null>(null)
   const [isDeletingTask, setIsDeletingTask] = useState(false)
+  const [invalidateModal, setInvalidateModal] = useState<{ task: TaskNode; scope: TaskInvalidateScope } | null>(null)
+  const [invalidateClearResult, setInvalidateClearResult] = useState(false)
+  const [isInvalidatingTask, setIsInvalidatingTask] = useState(false)
   const [isValidatingTree, setIsValidatingTree] = useState(false)
   const [validationError, setValidationError] = useState('')
   const [validationDialog, setValidationDialog] = useState<TreeValidationReport | null>(null)
@@ -592,6 +596,7 @@ export function App() {
         'task.created',
         'task.moved',
         'task.reordered',
+        'task.invalidated',
         'task.status.updated',
         'task.completed',
         'task.failed',
@@ -604,6 +609,7 @@ export function App() {
         'task.execution_policy.updated',
         'task.capabilities.updated',
         'task.git.linked',
+        'task.invalidated',
         'task.status.updated',
         'task.completed',
         'task.failed',
@@ -619,7 +625,8 @@ export function App() {
         'task.completed',
         'task.failed',
         'task.reconciled.stale_claim',
-        'task.execution_policy.updated'
+        'task.execution_policy.updated',
+        'task.invalidated'
       ])
 
       if (treeEventTypes.has(message.event_type)) {
@@ -647,6 +654,13 @@ export function App() {
         realtimeRefreshPlanRef.current.runtime = true
         if (selectedTaskID && signal.task_id === selectedTaskID) {
           realtimeRefreshPlanRef.current.observabilityTaskID = null
+        }
+      }
+      if (signal.event_type === 'task.invalidated') {
+        realtimeRefreshPlanRef.current.tree = true
+        realtimeRefreshPlanRef.current.runtime = true
+        if (selectedTaskID && (!signal.task_id || signal.task_id === selectedTaskID)) {
+          realtimeRefreshPlanRef.current.observabilityTaskID = selectedTaskID
         }
       }
       scheduleRefresh()
@@ -1249,16 +1263,99 @@ export function App() {
   }
 
   function buildDefaultResultPayload() {
+    const markdown = taskResultDraft.trim()
+    const sectionBullets = extractResultSections(markdown)
     const now = new Date().toISOString()
     return {
-      summary: `Updated via TasQ UI at ${now}`,
-      changes: ['See task result markdown for details.'],
-      paths: ['N/A'],
-      commands: ['N/A'],
-      tests: ['N/A'],
-      artifacts: ['N/A'],
-      next_risks: ['N/A']
+      summary: sectionBullets.summary ?? `Updated via TasQ UI at ${now}`,
+      changes: sectionBullets.changes.length > 0 ? sectionBullets.changes : ['See "## Changes" in task result markdown.'],
+      paths: sectionBullets.paths.length > 0 ? sectionBullets.paths : ['No repository paths listed.'],
+      commands: sectionBullets.commands.length > 0 ? sectionBullets.commands : ['No command log recorded.'],
+      tests: sectionBullets.tests.length > 0 ? sectionBullets.tests : ['Not run: add verification details in the result markdown.'],
+      artifacts: sectionBullets.artifacts.length > 0 ? sectionBullets.artifacts : ['No extra artifacts recorded.'],
+      next_risks: sectionBullets.risks.length > 0 ? sectionBullets.risks : ['No follow-up risks recorded.']
     }
+  }
+
+  function extractResultSections(markdown: string) {
+    const lines = markdown.split('\n')
+    let current: 'summary' | 'changes' | 'paths' | 'commands' | 'tests' | 'artifacts' | 'risks' | null = null
+    const out = {
+      summary: '',
+      changes: [] as string[],
+      paths: [] as string[],
+      commands: [] as string[],
+      tests: [] as string[],
+      artifacts: [] as string[],
+      risks: [] as string[]
+    }
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim()
+      switch (line.toLowerCase()) {
+        case '## summary':
+          current = 'summary'
+          continue
+        case '## changes':
+          current = 'changes'
+          continue
+        case '## paths':
+          current = 'paths'
+          continue
+        case '## commands':
+          current = 'commands'
+          continue
+        case '## verification':
+          current = 'tests'
+          continue
+        case '## artifacts':
+          current = 'artifacts'
+          continue
+        case '## risks':
+          current = 'risks'
+          continue
+      }
+
+      if (!current || line.length === 0) {
+        continue
+      }
+      if (current === 'summary') {
+        out.summary = out.summary ? `${out.summary} ${line}` : line
+        continue
+      }
+      if (line.startsWith('- ')) {
+        out[current].push(line.slice(2).trim())
+      }
+    }
+
+    return out
+  }
+
+  function buildTaskResultTemplate(currentValue: string) {
+    const trimmed = currentValue.trim()
+    if (trimmed.length > 0) {
+      return `${trimmed}\n\n## Summary\n- What was delivered?\n\n## Changes\n- File or behavior changes\n\n## Paths\n- path/to/file\n\n## Commands\n- go test ./...\n\n## Verification\n- What passed or what was not run\n\n## Artifacts\n- Commit SHA, binary, screenshot, or "None"\n\n## Risks\n- Follow-up risks or open questions`
+    }
+    return `## Summary
+- What was delivered?
+
+## Changes
+- File or behavior changes
+
+## Paths
+- path/to/file
+
+## Commands
+- go test ./...
+
+## Verification
+- What passed or what was not run
+
+## Artifacts
+- Commit SHA, binary, screenshot, or "None"
+
+## Risks
+- Follow-up risks or open questions`
   }
 
   async function moveTask(taskID: number, newParentTaskID: number | null) {
@@ -1441,6 +1538,51 @@ export function App() {
       setTaskMessage(message)
     } finally {
       setIsDeletingTask(false)
+    }
+  }
+
+  function openInvalidateModal(task: TaskNode, scope: TaskInvalidateScope) {
+    setInvalidateModal({ task, scope })
+    setInvalidateClearResult(false)
+  }
+
+  function closeInvalidateModal() {
+    if (isInvalidatingTask) return
+    setInvalidateModal(null)
+    setInvalidateClearResult(false)
+  }
+
+  async function submitInvalidateTask() {
+    if (!invalidateModal) return
+    const { task, scope } = invalidateModal
+    setIsInvalidatingTask(true)
+    try {
+      const res = await fetch(`${apiBase}/tasks/${task.id}/invalidate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope, clear_result_md: invalidateClearResult })
+      })
+      if (!res.ok) {
+        const message = await res.text()
+        throw new Error(message || 'failed to invalidate task scope')
+      }
+      if (selectedProjectID) {
+        await fetchTaskTree(selectedProjectID)
+      }
+      await refreshObservability(task.id, selectedProjectID)
+      setTaskMessage(
+        scope === 'subtree'
+          ? 'Task subtree reset to planned.'
+          : scope === 'downstream'
+            ? 'Downstream tasks reset to planned.'
+            : 'Task rerun scope reset to planned.'
+      )
+      closeInvalidateModal()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'failed to invalidate task scope'
+      setTaskMessage(message)
+    } finally {
+      setIsInvalidatingTask(false)
     }
   }
 
@@ -2110,6 +2252,15 @@ export function App() {
                   <Button size="sm" variant="outline" onClick={() => openAddChildModal(selectedTask)}>
                     Add child task
                   </Button>
+                  <Button size="sm" variant="outline" onClick={() => openInvalidateModal(selectedTask, 'subtree')}>
+                    Rerun subtree
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => openInvalidateModal(selectedTask, 'downstream')}>
+                    Rerun downstream
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => openInvalidateModal(selectedTask, 'both')}>
+                    Rerun from here
+                  </Button>
                   <Button
                     size="sm"
                     variant="outline"
@@ -2158,6 +2309,8 @@ export function App() {
                 value={taskResultDraft}
                 onChange={handleResultDraftChange}
                 onSave={() => void saveTaskResult()}
+                onInsertTemplate={() => handleResultDraftChange(buildTaskResultTemplate(taskResultDraft))}
+                templateButtonLabel="Insert handoff template"
                 isSaving={isSavingResult}
                 minHeightClassName="min-h-[240px]"
               />
@@ -2655,6 +2808,49 @@ export function App() {
               </Button>
               <Button type="button" variant="outline" onClick={() => void submitDeleteTask()} disabled={isDeletingTask}>
                 {isDeletingTask ? 'Deleting...' : 'Delete'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {invalidateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg rounded-lg border border-border bg-card p-4 shadow-2xl">
+            <p className="text-sm font-semibold">
+              {invalidateModal.scope === 'subtree'
+                ? 'Rerun Subtree'
+                : invalidateModal.scope === 'downstream'
+                  ? 'Rerun Downstream'
+                  : 'Rerun From Here'}
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {invalidateModal.scope === 'subtree' &&
+                'The selected task and all of its descendants will be reset to planned so they can be executed again.'}
+              {invalidateModal.scope === 'downstream' &&
+                'Tasks that depend on the selected task will be reset to planned. The selected task itself stays as-is.'}
+              {invalidateModal.scope === 'both' &&
+                'The selected task, its subtree, and downstream dependency tasks will be reset to planned.'}
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Target: <span className="text-foreground">{invalidateModal.task.title}</span>
+            </p>
+            <label className="mt-4 flex items-start gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={invalidateClearResult}
+                onChange={(e) => setInvalidateClearResult(e.target.checked)}
+                disabled={isInvalidatingTask}
+                className="mt-0.5"
+              />
+              <span>Clear existing task result markdown for the affected tasks.</span>
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={closeInvalidateModal} disabled={isInvalidatingTask}>
+                Cancel
+              </Button>
+              <Button type="button" variant="outline" onClick={() => void submitInvalidateTask()} disabled={isInvalidatingTask}>
+                {isInvalidatingTask ? 'Resetting...' : 'Reset to planned'}
               </Button>
             </div>
           </div>
