@@ -44,6 +44,7 @@ docker compose up --build
 - `POST /tasks/:id/heartbeat`
 - `POST /tasks/:id/release`
 - `POST /tasks/:id/complete`
+- `POST /tasks/:id/fail`
 - `GET /tasks/:id/context`
 
 ## Smoke tests

@@ -96,8 +96,13 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
   - Handler: `(*server).completeTask` in `internal/server/agents.go`
   - Purpose: complete claimed task and finalize result.
 
+- `POST /tasks/:task_id/fail`
+  - Handler: `(*server).failTask` in `internal/server/agents.go`
+  - Purpose: mark claimed task as failed and finalize run payload.
+
 ## Notes
 - Tree guard mode is controlled by env `TREE_GUARD_MODE`:
   - `off` (default), `validate`, `cleanse`.
 - Topology writes use project advisory lock via `lockProjectTopology`.
 - Claim lease defaults to 120 seconds when omitted.
+- Claim lifecycle now returns and accepts `claim_token` for heartbeat/release/complete/fail validation.

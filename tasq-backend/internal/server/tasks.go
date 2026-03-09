@@ -788,8 +788,15 @@ func logEvent(ctx context.Context, tx *sql.Tx, taskID int64, eventType, actorTyp
 		return fmt.Errorf("marshal payload: %w", err)
 	}
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO task_events(task_id, event_type, actor_type, actor_id, payload_json)
-		VALUES ($1, $2, $3, $4, $5::jsonb)`,
+		INSERT INTO task_events(task_id, project_id, event_type, actor_type, actor_id, payload_json)
+		VALUES (
+			$1,
+			(SELECT project_id FROM tasks WHERE id = $1),
+			$2,
+			$3,
+			$4,
+			$5::jsonb
+		)`,
 		taskID, eventType, actorType, actorID, string(payloadJSON))
 	return err
 }

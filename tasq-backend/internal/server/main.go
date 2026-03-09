@@ -89,16 +89,26 @@ type claimNextReq struct {
 type heartbeatReq struct {
 	AgentID      string `json:"agent_id"`
 	LeaseSeconds int64  `json:"lease_seconds"`
+	ClaimToken   string `json:"claim_token"`
 }
 
 type releaseReq struct {
-	AgentID  string `json:"agent_id"`
-	ToStatus string `json:"to_status"`
+	AgentID    string `json:"agent_id"`
+	ClaimToken string `json:"claim_token"`
+	ToStatus   string `json:"to_status"`
 }
 
 type completeReq struct {
-	AgentID  string `json:"agent_id"`
-	ResultMD string `json:"result_md"`
+	AgentID    string `json:"agent_id"`
+	ClaimToken string `json:"claim_token"`
+	ResultMD   string `json:"result_md"`
+}
+
+type failReq struct {
+	AgentID    string `json:"agent_id"`
+	ClaimToken string `json:"claim_token"`
+	Reason     string `json:"reason"`
+	ResultMD   string `json:"result_md"`
 }
 
 type moveTaskReq struct {
@@ -299,6 +309,11 @@ func (s *server) tasksSubrouter(w http.ResponseWriter, r *http.Request) {
 	case "complete":
 		if r.Method == http.MethodPost {
 			s.completeTask(w, r, taskID)
+			return
+		}
+	case "fail":
+		if r.Method == http.MethodPost {
+			s.failTask(w, r, taskID)
 			return
 		}
 	case "move":

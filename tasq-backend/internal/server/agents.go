@@ -2,9 +2,12 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -82,7 +85,15 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = tx.ExecContext(r.Context(), `
+	claimToken, err := generateClaimToken()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var claimID int64
+	var attemptNo int
+	err = tx.QueryRowContext(r.Context(), `
 		INSERT INTO task_claims(task_id, claimed_by_type, claimed_by_id, lease_until, heartbeat_at, attempt_no, status)
 		VALUES (
 			$1,
@@ -92,8 +103,27 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 			NOW(),
 			COALESCE((SELECT MAX(attempt_no) + 1 FROM task_claims WHERE task_id = $1), 1),
 			'active'
-		)`,
-		t.ID, req.AgentID, req.LeaseSeconds)
+		)
+		RETURNING id, attempt_no`,
+		t.ID, req.AgentID, req.LeaseSeconds).Scan(&claimID, &attemptNo)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if _, err := tx.ExecContext(r.Context(), `
+		UPDATE task_claims
+		SET claim_token = $2
+		WHERE id = $1`, claimID, claimToken); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var runID int64
+	err = tx.QueryRowContext(r.Context(), `
+		INSERT INTO task_runs(task_id, agent_id, attempt_no, status)
+		VALUES ($1, $2, $3, 'running')
+		RETURNING id`, t.ID, req.AgentID, attemptNo).Scan(&runID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -109,8 +139,13 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	t.Status = "in_progress"
 
 	if err := logEvent(r.Context(), tx, t.ID, "task.claimed", "agent", req.AgentID, map[string]any{
+		"claim_id":      claimID,
+		"claim_token":   claimToken,
+		"attempt_no":    attemptNo,
+		"task_run_id":   runID,
 		"lease_seconds": req.LeaseSeconds,
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -122,7 +157,16 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"task": t})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"task": t,
+		"claim": map[string]any{
+			"id":            claimID,
+			"token":         claimToken,
+			"attempt_no":    attemptNo,
+			"task_run_id":   runID,
+			"lease_seconds": req.LeaseSeconds,
+		},
+	})
 }
 
 // heartbeatTaskClaim handles POST /tasks/:task_id/heartbeat.
@@ -147,7 +191,7 @@ func (s *server) heartbeatTaskClaim(w http.ResponseWriter, r *http.Request, task
 	}
 	defer tx.Rollback()
 
-	claimID, err := getActiveClaimID(r.Context(), tx, taskID, req.AgentID)
+	claim, err := getActiveClaim(r.Context(), tx, taskID, req.AgentID, req.ClaimToken)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "active claim not found", http.StatusConflict)
@@ -161,13 +205,15 @@ func (s *server) heartbeatTaskClaim(w http.ResponseWriter, r *http.Request, task
 		UPDATE task_claims
 		SET lease_until = NOW() + ($2::text || ' seconds')::interval,
 			heartbeat_at = NOW()
-		WHERE id = $1`, claimID, req.LeaseSeconds)
+		WHERE id = $1`, claim.ID, req.LeaseSeconds)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	if err := logEvent(r.Context(), tx, taskID, "task.claim.heartbeat", "agent", req.AgentID, map[string]any{
+		"claim_id":      claim.ID,
+		"attempt_no":    claim.AttemptNo,
 		"lease_seconds": req.LeaseSeconds,
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -212,7 +258,7 @@ func (s *server) releaseTaskClaim(w http.ResponseWriter, r *http.Request, taskID
 	}
 	defer tx.Rollback()
 
-	claimID, err := getActiveClaimID(r.Context(), tx, taskID, req.AgentID)
+	claim, err := getActiveClaim(r.Context(), tx, taskID, req.AgentID, req.ClaimToken)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "active claim not found", http.StatusConflict)
@@ -225,8 +271,15 @@ func (s *server) releaseTaskClaim(w http.ResponseWriter, r *http.Request, taskID
 	_, err = tx.ExecContext(r.Context(), `
 		UPDATE task_claims
 		SET status = 'released', released_at = NOW()
-		WHERE id = $1`, claimID)
+		WHERE id = $1`, claim.ID)
 	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := finishLatestTaskRun(r.Context(), tx, taskID, req.AgentID, claim.AttemptNo, "released", map[string]any{
+		"to_status": req.ToStatus,
+	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -242,7 +295,9 @@ func (s *server) releaseTaskClaim(w http.ResponseWriter, r *http.Request, taskID
 	}
 
 	if err := logEvent(r.Context(), tx, taskID, "task.claim.released", "agent", req.AgentID, map[string]any{
-		"to_status": req.ToStatus,
+		"claim_id":   claim.ID,
+		"attempt_no": claim.AttemptNo,
+		"to_status":  req.ToStatus,
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -279,7 +334,7 @@ func (s *server) completeTask(w http.ResponseWriter, r *http.Request, taskID int
 	}
 	defer tx.Rollback()
 
-	claimID, err := getActiveClaimID(r.Context(), tx, taskID, req.AgentID)
+	claim, err := getActiveClaim(r.Context(), tx, taskID, req.AgentID, req.ClaimToken)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "active claim not found", http.StatusConflict)
@@ -314,13 +369,23 @@ func (s *server) completeTask(w http.ResponseWriter, r *http.Request, taskID int
 	_, err = tx.ExecContext(r.Context(), `
 		UPDATE task_claims
 		SET status = 'released', released_at = NOW()
-		WHERE id = $1`, claimID)
+		WHERE id = $1`, claim.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	if err := logEvent(r.Context(), tx, taskID, "task.completed", "agent", req.AgentID, map[string]any{}); err != nil {
+	if err := finishLatestTaskRun(r.Context(), tx, taskID, req.AgentID, claim.AttemptNo, "completed", map[string]any{
+		"result_md": req.ResultMD,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := logEvent(r.Context(), tx, taskID, "task.completed", "agent", req.AgentID, map[string]any{
+		"claim_id":   claim.ID,
+		"attempt_no": claim.AttemptNo,
+	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -337,23 +402,149 @@ func (s *server) completeTask(w http.ResponseWriter, r *http.Request, taskID int
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// getActiveClaimID fetches the current active lease for an agent-task pair.
-func getActiveClaimID(ctx context.Context, tx *sql.Tx, taskID int64, agentID string) (int64, error) {
-	var claimID int64
+// failTask handles POST /tasks/:task_id/fail.
+func (s *server) failTask(w http.ResponseWriter, r *http.Request, taskID int64) {
+	var req failReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.AgentID) == "" {
+		http.Error(w, "agent_id is required", http.StatusBadRequest)
+		return
+	}
+
+	tx, err := s.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	claim, err := getActiveClaim(r.Context(), tx, taskID, req.AgentID, req.ClaimToken)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "active claim not found", http.StatusConflict)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, err = tx.ExecContext(r.Context(), `
+		UPDATE tasks
+		SET status = 'failed',
+			result_md = CASE WHEN $2 <> '' THEN $2 ELSE result_md END,
+			updated_at = NOW()
+		WHERE id = $1`, taskID, req.ResultMD)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, err = tx.ExecContext(r.Context(), `
+		UPDATE task_claims
+		SET status = 'released', released_at = NOW()
+		WHERE id = $1`, claim.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := finishLatestTaskRun(r.Context(), tx, taskID, req.AgentID, claim.AttemptNo, "failed", map[string]any{
+		"reason":    req.Reason,
+		"result_md": req.ResultMD,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := logEvent(r.Context(), tx, taskID, "task.failed", "agent", req.AgentID, map[string]any{
+		"claim_id":   claim.ID,
+		"attempt_no": claim.AttemptNo,
+		"reason":     req.Reason,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	projectID, pidErr := s.fetchProjectIDByTaskID(r.Context(), taskID)
+	if pidErr == nil {
+		s.maybeRunTreeGuard(r.Context(), projectID)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+type activeClaim struct {
+	ID        int64
+	AttemptNo int
+}
+
+// getActiveClaim fetches the current active lease for an agent-task pair.
+func getActiveClaim(ctx context.Context, tx *sql.Tx, taskID int64, agentID, claimToken string) (activeClaim, error) {
+	var claim activeClaim
 	err := tx.QueryRowContext(ctx, `
-		SELECT id
+		SELECT id, attempt_no
 		FROM task_claims
 		WHERE task_id = $1
 		  AND claimed_by_id = $2
+		  AND ($3 = '' OR claim_token = $3)
 		  AND status = 'active'
 		  AND lease_until > NOW()
 		ORDER BY claimed_at DESC
 		LIMIT 1
-		FOR UPDATE`, taskID, agentID).Scan(&claimID)
+		FOR UPDATE`, taskID, agentID, claimToken).Scan(&claim.ID, &claim.AttemptNo)
 	if err != nil {
-		return 0, err
+		return activeClaim{}, err
 	}
-	return claimID, nil
+	return claim, nil
+}
+
+func finishLatestTaskRun(ctx context.Context, tx *sql.Tx, taskID int64, agentID string, attemptNo int, status string, payload any) error {
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal run payload: %w", err)
+	}
+
+	res, err := tx.ExecContext(ctx, `
+		WITH target AS (
+			SELECT id
+			FROM task_runs
+			WHERE task_id = $1
+			  AND agent_id = $2
+			  AND attempt_no = $3
+			  AND status = 'running'
+			ORDER BY started_at DESC
+			LIMIT 1
+			FOR UPDATE
+		)
+		UPDATE task_runs
+		SET status = $4,
+			result_payload_json = $5::jsonb,
+			finished_at = NOW()
+		WHERE id IN (SELECT id FROM target)`,
+		taskID, agentID, attemptNo, status, string(payloadJSON))
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return fmt.Errorf("running task_run not found (task=%d agent=%s attempt=%d)", taskID, agentID, attemptNo)
+	}
+	return nil
+}
+
+func generateClaimToken() (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("generate claim token: %w", err)
+	}
+	return hex.EncodeToString(buf), nil
 }
 
 // getTaskContext handles GET /tasks/:task_id/context.

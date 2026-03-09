@@ -20,6 +20,7 @@
 - `POST /tasks/:id/heartbeat`
 - `POST /tasks/:id/release`
 - `POST /tasks/:id/complete`
+- `POST /tasks/:id/fail`
 - `GET /tasks/:id/context`
 
 ## Notes
@@ -28,5 +29,6 @@
 - A task can move to `in_progress` or `done` only if all predecessor tasks are `done`.
 - Task status includes `failed`, and execution policy includes `max_attempts` (default `5`).
 - Queue lease lifecycle supports `claim -> heartbeat -> complete|release`.
+- Queue lease lifecycle supports `claim -> heartbeat -> complete|release|fail`.
 - Claim lease defaults to `120s` when omitted.
 - Topology-changing operations (`create task`, `add/remove dependency`, `move`, `reorder`) use project-scoped advisory transaction locks.
