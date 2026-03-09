@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 )
 
 // createProject handles POST /projects.
@@ -79,6 +80,12 @@ func (s *server) deleteProject(w http.ResponseWriter, r *http.Request, projectID
 		http.Error(w, "project not found", http.StatusNotFound)
 		return
 	}
+
+	s.streamBroker.publish(projectSignal{
+		ProjectID: projectID,
+		EventType: "project.deleted",
+		CreatedAt: time.Now().UTC(),
+	})
 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

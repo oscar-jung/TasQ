@@ -17,6 +17,7 @@ type server struct {
 	auth                     *authStore
 	reconcileInterval        time.Duration
 	defaultHeartbeatStaleSec int
+	streamBroker             *projectStreamBroker
 }
 
 type project struct {
@@ -252,6 +253,7 @@ func Run() error {
 		auth:                     auth,
 		reconcileInterval:        time.Duration(reconcileIntervalSec) * time.Second,
 		defaultHeartbeatStaleSec: heartbeatStaleSec,
+		streamBroker:             newProjectStreamBroker(),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.healthz)

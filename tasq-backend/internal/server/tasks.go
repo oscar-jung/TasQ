@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	pq "github.com/lib/pq"
 )
@@ -716,6 +717,18 @@ func (s *server) deleteTask(w http.ResponseWriter, r *http.Request, taskID int64
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	deletedTaskID := taskID
+	s.streamBroker.publish(projectSignal{
+		ProjectID: projectID,
+		TaskID:    &deletedTaskID,
+		EventType: "task.deleted",
+		CreatedAt: time.Now().UTC(),
+		Payload: map[string]any{
+			"strategy":       req.Strategy,
+			"parent_task_id": parentID,
+		},
+	})
 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "strategy": req.Strategy})
 }

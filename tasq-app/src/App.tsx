@@ -72,6 +72,14 @@ type ProjectEventsResponse = {
   events: TaskEventSummary[]
 }
 
+type ProjectSignalEvent = {
+  project_id: number
+  task_id?: number | null
+  event_type: string
+  created_at: string
+  payload?: Record<string, unknown>
+}
+
 type RuntimeClaimAlert = {
   claim_id: number
   task_id: number
@@ -270,6 +278,12 @@ export function App() {
   const syncedTaskIDRef = useRef<number | null>(null)
   const lastValidationAlertKeyRef = useRef('')
   const realtimeRefreshTimerRef = useRef<number | null>(null)
+  const realtimeRefreshPlanRef = useRef({
+    projects: false,
+    tree: false,
+    runtime: false,
+    observabilityTaskID: null as number | null
+  })
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectID) ?? null,
@@ -551,17 +565,92 @@ export function App() {
         window.clearTimeout(realtimeRefreshTimerRef.current)
       }
       realtimeRefreshTimerRef.current = window.setTimeout(() => {
-        void fetchProjects()
-        void fetchTaskTree(selectedProjectID)
-        if (selectedTaskID) {
-          void refreshObservability(selectedTaskID, selectedProjectID)
-        } else {
+        const plan = realtimeRefreshPlanRef.current
+        if (plan.projects) {
+          void fetchProjects()
+        }
+        if (plan.tree) {
+          void fetchTaskTree(selectedProjectID)
+        }
+        if (plan.observabilityTaskID) {
+          void refreshObservability(plan.observabilityTaskID, selectedProjectID)
+        } else if (plan.runtime) {
           void refreshRuntimeAlerts()
+        }
+        realtimeRefreshPlanRef.current = {
+          projects: false,
+          tree: false,
+          runtime: false,
+          observabilityTaskID: null
         }
       }, 250)
     }
 
-    source.addEventListener('task-event', scheduleRefresh)
+    source.addEventListener('task-event', (event) => {
+      const message = JSON.parse((event as MessageEvent<string>).data) as TaskEventSummary
+      const treeEventTypes = new Set([
+        'task.created',
+        'task.moved',
+        'task.reordered',
+        'task.status.updated',
+        'task.completed',
+        'task.failed',
+        'task.claimed',
+        'task.claim.released',
+        'task.reconciled.stale_claim'
+      ])
+      const detailEventTypes = new Set([
+        'task.content.updated',
+        'task.execution_policy.updated',
+        'task.capabilities.updated',
+        'task.git.linked',
+        'task.status.updated',
+        'task.completed',
+        'task.failed',
+        'task.claimed',
+        'task.claim.heartbeat',
+        'task.claim.released',
+        'task.reconciled.stale_claim'
+      ])
+      const runtimeEventTypes = new Set([
+        'task.claimed',
+        'task.claim.heartbeat',
+        'task.claim.released',
+        'task.completed',
+        'task.failed',
+        'task.reconciled.stale_claim',
+        'task.execution_policy.updated'
+      ])
+
+      if (treeEventTypes.has(message.event_type)) {
+        realtimeRefreshPlanRef.current.tree = true
+      }
+      if (runtimeEventTypes.has(message.event_type)) {
+        realtimeRefreshPlanRef.current.runtime = true
+      }
+      if (
+        selectedTaskID &&
+        detailEventTypes.has(message.event_type) &&
+        (message.task_id === selectedTaskID || realtimeRefreshPlanRef.current.tree)
+      ) {
+        realtimeRefreshPlanRef.current.observabilityTaskID = selectedTaskID
+      }
+      scheduleRefresh()
+    })
+    source.addEventListener('project-signal', (event) => {
+      const signal = JSON.parse((event as MessageEvent<string>).data) as ProjectSignalEvent
+      if (signal.event_type === 'project.deleted') {
+        realtimeRefreshPlanRef.current.projects = true
+      }
+      if (signal.event_type === 'task.deleted') {
+        realtimeRefreshPlanRef.current.tree = true
+        realtimeRefreshPlanRef.current.runtime = true
+        if (selectedTaskID && signal.task_id === selectedTaskID) {
+          realtimeRefreshPlanRef.current.observabilityTaskID = null
+        }
+      }
+      scheduleRefresh()
+    })
     source.onerror = () => {
       // Keep existing polling fallback active; SSE reconnects automatically.
     }

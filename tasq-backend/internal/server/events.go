@@ -77,11 +77,17 @@ func (s *server) streamProjectEvents(w http.ResponseWriter, r *http.Request, pro
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+	signals := s.streamBroker.subscribe(projectID)
+	defer s.streamBroker.unsubscribe(projectID, signals)
 
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case signal := <-signals:
+			fmt.Fprint(w, "event: project-signal\n")
+			fmt.Fprintf(w, "data: %s\n\n", mustMarshalSSEData(signal))
+			flusher.Flush()
 		case <-ticker.C:
 			events, err := s.fetchProjectEventsAfter(r.Context(), projectID, lastID, 100)
 			if err != nil {
