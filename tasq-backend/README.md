@@ -20,6 +20,7 @@
 - `GET /tasks/:id/capabilities`
 - `POST /agents/claim-next`
 - `POST /projects/:id/claims/reconcile`
+- `GET /projects/:id/runtime-alerts`
 - `POST /tasks/:id/heartbeat`
 - `POST /tasks/:id/release`
 - `POST /tasks/:id/complete`
@@ -46,6 +47,10 @@
   - agent `POST /agents/claim-next` may provide `capabilities`; required set must be satisfied
 - Queue lease lifecycle supports `claim -> heartbeat -> complete|release`.
 - Queue lease lifecycle supports `claim -> heartbeat -> complete|release|fail`.
+- Background stale-claim reconciler is enabled by default:
+  - `RECONCILE_INTERVAL_SECONDS=30` (set `0` to disable)
+- Runtime alert heartbeat threshold:
+  - `HEARTBEAT_STALE_SECONDS=300`
 - Claim lease defaults to `120s` when omitted.
 - `complete`/`fail` expect structured `result_payload` JSON with required keys:
   `summary`, `changes`, `paths`, `commands`, `tests`, `artifacts`, `next_risks`.

@@ -12,9 +12,11 @@ import (
 )
 
 type server struct {
-	db            *sql.DB
-	treeGuardMode string
-	auth          *authStore
+	db                       *sql.DB
+	treeGuardMode            string
+	auth                     *authStore
+	reconcileInterval        time.Duration
+	defaultHeartbeatStaleSec int
 }
 
 type project struct {
@@ -235,7 +237,22 @@ func Run() error {
 		return err
 	}
 
-	s := &server{db: db, treeGuardMode: treeGuardMode, auth: auth}
+	reconcileIntervalSec := 30
+	if parsed, parseErr := strconv.Atoi(strings.TrimSpace(getenv("RECONCILE_INTERVAL_SECONDS", "30"))); parseErr == nil && parsed >= 0 {
+		reconcileIntervalSec = parsed
+	}
+	heartbeatStaleSec := 300
+	if parsed, parseErr := strconv.Atoi(strings.TrimSpace(getenv("HEARTBEAT_STALE_SECONDS", "300"))); parseErr == nil && parsed > 0 {
+		heartbeatStaleSec = parsed
+	}
+
+	s := &server{
+		db:                       db,
+		treeGuardMode:            treeGuardMode,
+		auth:                     auth,
+		reconcileInterval:        time.Duration(reconcileIntervalSec) * time.Second,
+		defaultHeartbeatStaleSec: heartbeatStaleSec,
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.healthz)
 	mux.HandleFunc("/projects", s.projects)
@@ -245,6 +262,13 @@ func Run() error {
 	mux.HandleFunc("/agents/claim-next", s.claimNext)
 
 	h := withAuth(auth, withJSON(withCORS(mux)))
+	if s.reconcileInterval > 0 {
+		go s.runClaimReconciler(s.reconcileInterval)
+		log.Printf("claim reconciler enabled: interval=%s", s.reconcileInterval)
+	} else {
+		log.Printf("claim reconciler disabled")
+	}
+	log.Printf("runtime alerts heartbeat stale threshold=%ds", s.defaultHeartbeatStaleSec)
 	log.Printf("tasq-backend listening on :%s", port)
 	if err := http.ListenAndServe(":"+port, h); err != nil {
 		return err
@@ -337,6 +361,13 @@ func (s *server) projectsSubrouter(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.reconcileProjectClaims(w, r, projectID)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "runtime-alerts" && r.Method == http.MethodGet {
+		if !s.requireProjectAccess(w, r, projectID, "project:read", false) {
+			return
+		}
+		s.getProjectRuntimeAlerts(w, r, projectID)
 		return
 	}
 	if len(parts) == 2 && parts[1] == "events" && r.Method == http.MethodGet {

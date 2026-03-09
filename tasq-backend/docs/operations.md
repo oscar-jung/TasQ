@@ -13,6 +13,10 @@ docker compose ps
 docker compose logs --tail=100 api web db
 ```
 
+Runtime knobs:
+- `RECONCILE_INTERVAL_SECONDS` (default `30`, set `0` to disable)
+- `HEARTBEAT_STALE_SECONDS` (default `300`)
+
 ## Backup / Restore (PostgreSQL)
 ### Backup
 ```bash
@@ -41,6 +45,8 @@ cat tasq_backup.sql | docker compose exec -T db psql -U tasq -d tasq
 5. Use event timeline APIs:
    - `/tasks/:id/events`
    - `/projects/:id/events`
+6. Check runtime alerts:
+   - `/projects/:id/runtime-alerts`
 
 ### 3) Reclaim behavior check
 - Run smoke:

@@ -45,6 +45,10 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
   - Handler: `(*server).reconcileProjectClaims` in `internal/server/reconcile.go`
   - Purpose: manually release expired active claims and restore stale in-progress tasks.
 
+- `GET /projects/:project_id/runtime-alerts?heartbeat_stale_seconds=300`
+  - Handler: `(*server).getProjectRuntimeAlerts` in `internal/server/runtime_ops.go`
+  - Purpose: runtime health view for stale claims, heartbeat-overdue claims, and orphan in-progress tasks.
+
 ## Task Dependencies
 - `POST /tasks/:task_id/dependencies`
   - Handler: `(*server).addDependency` in `internal/server/tasks.go`
@@ -143,6 +147,12 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
 - Topology writes use project advisory lock via `lockProjectTopology`.
 - Claim lease defaults to 120 seconds when omitted.
 - Claim lifecycle now returns and accepts `claim_token` for heartbeat/release/complete/fail validation.
+- Background reconciler:
+  - `RECONCILE_INTERVAL_SECONDS` (default `30`, `0` disables periodic reconcile)
+  - automatically releases expired active claims and resets stale in-progress tasks.
+- Heartbeat alert threshold:
+  - `HEARTBEAT_STALE_SECONDS` (default `300`)
+  - used by `/projects/:id/runtime-alerts` unless overridden by query.
 - Auth/RBAC:
   - `AUTH_MODE`: `off`, `optional`, `required`
   - `AUTH_TOKENS`: token JSON with `actor_type`, `actor_id`, `scopes`, and project scopes

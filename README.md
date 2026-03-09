@@ -44,6 +44,7 @@ docker compose up --build
 - `GET /tasks/:id/capabilities`
 - `POST /agents/claim-next`
 - `POST /projects/:id/claims/reconcile`
+- `GET /projects/:id/runtime-alerts`
 - `POST /tasks/:id/heartbeat`
 - `POST /tasks/:id/release`
 - `POST /tasks/:id/complete`
