@@ -148,6 +148,7 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
     - `interrupted_runs` (recent released runs with resume hints and optional checkpoint note)
     - `latest_interruption` (latest released run, preclassified for recovery UX)
     - `git_refs`
+    - `git_recovery`
     - `project_git_policy`
     - `task_git_policy`
     - `effective_git_policy`
@@ -157,6 +158,13 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
     - `reason_label`
     - `severity`
     - `resume_checklist`
+  - `git_recovery` includes:
+    - `status`
+    - `status_label`
+    - `severity`
+    - `detail`
+    - `produced_for_current_claim`
+    - `branch_aligned`
 
 - `GET /tasks/:task_id/events?limit=50`
   - Handler: `(*server).listTaskEvents` in `internal/server/events.go`

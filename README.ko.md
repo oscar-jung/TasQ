@@ -235,6 +235,7 @@ rerun 시에는 branch-first 전략을 권장해:
   - `baseline`
   - `rerun_branch`
   - `produced`
+- rerun 메타데이터가 충분한지 판단할 때는 임의 추정보다 Task Detail의 서버 제공 `git_recovery` 요약을 우선 기준으로 봐.
 ```
 
 ## 에이전트 데모 실행

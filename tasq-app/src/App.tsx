@@ -67,6 +67,17 @@ type TaskContextResponse = {
   interrupted_runs: InterruptedRunSummary[]
   latest_interruption: InterruptedRunSummary | null
   git_refs: TaskGitRefSummary[]
+  git_recovery: {
+    status: string
+    status_label: string
+    severity: 'info' | 'warning' | 'critical' | 'success'
+    detail: string
+    produced_for_current_claim: boolean
+    branch_aligned: boolean
+    baseline?: TaskGitRefSummary | null
+    rerun_branch?: TaskGitRefSummary | null
+    produced?: TaskGitRefSummary | null
+  } | null
   project_git_policy: 'optional' | 'required'
   task_git_policy: 'inherit' | 'required' | 'not_required'
   effective_git_policy: 'optional' | 'required'
@@ -223,63 +234,11 @@ function interruptionSeverityClass(severity: InterruptedRunSummary['severity']) 
   return 'text-amber-200'
 }
 
-function deriveGitRecoveryStatus(
-  taskContext: TaskContextResponse,
-  gitRecoverySummary: {
-    baseline: TaskGitRefSummary | null
-    rerunBranch: TaskGitRefSummary | null
-    produced: TaskGitRefSummary | null
-  }
-) {
-  if (taskContext.effective_git_policy !== 'required') {
-    return {
-      label: 'Git optional',
-      detail: 'This task can complete without linked refs.',
-      className: 'text-muted-foreground border-border/70 bg-background/40'
-    }
-  }
-
-  if (!gitRecoverySummary.baseline) {
-    return {
-      label: 'Missing baseline',
-      detail: 'Link the branch point commit before editing.',
-      className: 'text-amber-200 border-amber-500/40 bg-amber-500/10'
-    }
-  }
-
-  if (gitRecoverySummary.rerunBranch && !gitRecoverySummary.produced) {
-    return {
-      label: 'Rerun in progress',
-      detail: 'A rerun branch exists. Link the produced commit before completing.',
-      className: 'text-sky-200 border-sky-500/40 bg-sky-500/10'
-    }
-  }
-
-  if (!gitRecoverySummary.produced) {
-    return {
-      label: 'Awaiting produced ref',
-      detail: 'Link the commit created by this attempt before completion.',
-      className: 'text-amber-200 border-amber-500/40 bg-amber-500/10'
-    }
-  }
-
-  if (
-    gitRecoverySummary.rerunBranch &&
-    gitRecoverySummary.produced.branch &&
-    gitRecoverySummary.produced.branch !== gitRecoverySummary.rerunBranch.branch
-  ) {
-    return {
-      label: 'Branch mismatch',
-      detail: 'Produced commit is on a different branch than the rerun marker. Verify recovery metadata.',
-      className: 'text-rose-200 border-rose-500/40 bg-rose-500/10'
-    }
-  }
-
-  return {
-    label: 'Recovery refs ready',
-    detail: 'Baseline and produced refs are linked for this task.',
-    className: 'text-emerald-200 border-emerald-500/40 bg-emerald-500/10'
-  }
+function gitRecoverySeverityClass(severity: 'info' | 'warning' | 'critical' | 'success') {
+  if (severity === 'critical') return 'text-rose-200 border-rose-500/40 bg-rose-500/10'
+  if (severity === 'success') return 'text-emerald-200 border-emerald-500/40 bg-emerald-500/10'
+  if (severity === 'info') return 'text-sky-200 border-sky-500/40 bg-sky-500/10'
+  return 'text-amber-200 border-amber-500/40 bg-amber-500/10'
 }
 
 export function App() {
@@ -448,7 +407,7 @@ export function App() {
 
   const gitRecoveryStatus = useMemo(() => {
     if (!taskContext) return null
-    return deriveGitRecoveryStatus(taskContext, gitRecoverySummary)
+    return taskContext.git_recovery
   }, [taskContext, gitRecoverySummary])
 
   const filteredTaskEvents = useMemo(() => {
@@ -1099,6 +1058,17 @@ export function App() {
       interrupted_runs?: InterruptedRunSummary[] | null
       latest_interruption?: InterruptedRunSummary | null
       git_refs?: TaskGitRefSummary[] | null
+      git_recovery?: {
+        status?: string
+        status_label?: string
+        severity?: 'info' | 'warning' | 'critical' | 'success'
+        detail?: string
+        produced_for_current_claim?: boolean
+        branch_aligned?: boolean
+        baseline?: TaskGitRefSummary | null
+        rerun_branch?: TaskGitRefSummary | null
+        produced?: TaskGitRefSummary | null
+      } | null
       project_git_policy?: 'optional' | 'required'
       task_git_policy?: 'inherit' | 'required' | 'not_required'
       effective_git_policy?: 'optional' | 'required'
@@ -1135,6 +1105,24 @@ export function App() {
           }
         : null,
       git_refs: Array.isArray(raw.git_refs) ? raw.git_refs : [],
+      git_recovery: raw.git_recovery
+        ? {
+            status: raw.git_recovery.status ?? 'git_optional',
+            status_label: raw.git_recovery.status_label ?? 'Git optional',
+            severity:
+              raw.git_recovery.severity === 'critical' ||
+              raw.git_recovery.severity === 'success' ||
+              raw.git_recovery.severity === 'info'
+                ? raw.git_recovery.severity
+                : 'warning',
+            detail: raw.git_recovery.detail ?? '',
+            produced_for_current_claim: Boolean(raw.git_recovery.produced_for_current_claim),
+            branch_aligned: raw.git_recovery.branch_aligned !== false,
+            baseline: raw.git_recovery.baseline ?? null,
+            rerun_branch: raw.git_recovery.rerun_branch ?? null,
+            produced: raw.git_recovery.produced ?? null
+          }
+        : null,
       project_git_policy: raw.project_git_policy === 'required' ? 'required' : 'optional',
       task_git_policy:
         raw.task_git_policy === 'required' || raw.task_git_policy === 'not_required'
@@ -2946,8 +2934,8 @@ export function App() {
                                 Effective: {taskContext.effective_git_policy}
                               </span>
                               {gitRecoveryStatus && (
-                                <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${gitRecoveryStatus.className}`}>
-                                  {gitRecoveryStatus.label}
+                                <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${gitRecoverySeverityClass(gitRecoveryStatus.severity)}`}>
+                                  {gitRecoveryStatus.status_label}
                                 </span>
                               )}
                             </div>
@@ -2955,6 +2943,11 @@ export function App() {
                             {taskContext.effective_git_policy === 'required' && (
                               <p className="mt-2 text-muted-foreground">
                                 Completion is blocked until a baseline ref exists and a produced ref is linked during the current attempt.
+                              </p>
+                            )}
+                            {gitRecoveryStatus?.status === 'stale_produced' && (
+                              <p className="mt-1 text-amber-200">
+                                The latest produced ref belongs to an older claim. Link a fresh produced ref for this attempt.
                               </p>
                             )}
                             {taskContext.effective_git_policy === 'required' && (!taskContext.has_baseline_ref || !taskContext.has_produced_ref) && (

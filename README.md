@@ -236,6 +236,7 @@ For reruns, prefer a branch-first workflow:
   - `baseline`
   - `rerun_branch`
   - `produced`
+- In Task Detail, prefer the server-provided `git_recovery` summary over ad hoc interpretation when deciding whether rerun metadata is complete.
 ```
 
 ## Agent runtime demo

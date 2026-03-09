@@ -140,6 +140,7 @@ cat tasq_backup.sql | docker compose exec -T db psql -U tasq -d tasq
 - In Git-required mode, Task Detail shows a recovery status summary:
   - `Missing baseline`: no branch point commit linked yet
   - `Awaiting produced ref`: baseline exists, but current attempt has not linked its output commit
+  - `Stale produced ref`: latest produced ref is older than the current claim/attempt
   - `Rerun in progress`: rerun branch exists but produced commit is not linked yet
   - `Recovery refs ready`: baseline and produced refs are present
   - `Branch mismatch`: rerun branch marker and produced commit branch disagree; inspect before completion

@@ -185,6 +185,7 @@ type taskContext struct {
 	InterruptedRuns    []interruptedRunSummary `json:"interrupted_runs"`
 	LatestInterruption *interruptedRunSummary  `json:"latest_interruption,omitempty"`
 	GitRefs            []taskGitRefSummary     `json:"git_refs"`
+	GitRecovery        gitRecoverySummary      `json:"git_recovery"`
 	ProjectGitPolicy   string                  `json:"project_git_policy"`
 	TaskGitPolicy      string                  `json:"task_git_policy"`
 	EffectiveGitPolicy string                  `json:"effective_git_policy"`
@@ -210,6 +211,18 @@ type taskGitRefSummary struct {
 	CommitSHA  string    `json:"commit_sha"`
 	RefKind    string    `json:"ref_kind"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+type gitRecoverySummary struct {
+	Status                  string             `json:"status"`
+	StatusLabel             string             `json:"status_label"`
+	Severity                string             `json:"severity"`
+	Detail                  string             `json:"detail"`
+	ProducedForCurrentClaim bool               `json:"produced_for_current_claim"`
+	BranchAligned           bool               `json:"branch_aligned"`
+	Baseline                *taskGitRefSummary `json:"baseline,omitempty"`
+	RerunBranch             *taskGitRefSummary `json:"rerun_branch,omitempty"`
+	Produced                *taskGitRefSummary `json:"produced,omitempty"`
 }
 
 type interruptedRunSummary struct {

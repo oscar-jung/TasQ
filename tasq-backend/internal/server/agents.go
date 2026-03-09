@@ -889,6 +889,92 @@ func validateGitPolicyCompletionTx(ctx context.Context, tx *sql.Tx, taskID int64
 	return hasBaselineRef, hasCurrentProducedRef, nil
 }
 
+func buildGitRecoverySummary(
+	effectivePolicy string,
+	gitRefs []taskGitRefSummary,
+	claimStartedAt *time.Time,
+) gitRecoverySummary {
+	summary := gitRecoverySummary{
+		Status:        "git_optional",
+		StatusLabel:   "Git optional",
+		Severity:      "info",
+		Detail:        "This task can complete without linked refs.",
+		BranchAligned: true,
+	}
+	if effectivePolicy != "required" {
+		return summary
+	}
+
+	var baseline *taskGitRefSummary
+	var rerunBranch *taskGitRefSummary
+	var produced *taskGitRefSummary
+	for i := range gitRefs {
+		ref := gitRefs[i]
+		switch ref.RefKind {
+		case "baseline":
+			if baseline == nil {
+				copied := ref
+				baseline = &copied
+			}
+		case "rerun_branch":
+			if rerunBranch == nil {
+				copied := ref
+				rerunBranch = &copied
+			}
+		case "produced":
+			if produced == nil {
+				copied := ref
+				produced = &copied
+			}
+		}
+	}
+
+	summary.Baseline = baseline
+	summary.RerunBranch = rerunBranch
+	summary.Produced = produced
+	if claimStartedAt != nil && produced != nil {
+		summary.ProducedForCurrentClaim = !produced.CreatedAt.Before(*claimStartedAt)
+	}
+	if rerunBranch != nil && produced != nil && rerunBranch.Branch != "" && produced.Branch != "" {
+		summary.BranchAligned = rerunBranch.Branch == produced.Branch
+	}
+
+	switch {
+	case baseline == nil:
+		summary.Status = "missing_baseline"
+		summary.StatusLabel = "Missing baseline"
+		summary.Severity = "warning"
+		summary.Detail = "Link the branch point commit before editing."
+	case rerunBranch != nil && produced == nil:
+		summary.Status = "rerun_in_progress"
+		summary.StatusLabel = "Rerun in progress"
+		summary.Severity = "info"
+		summary.Detail = "A rerun branch exists. Link the produced commit before completing."
+	case produced == nil:
+		summary.Status = "awaiting_produced"
+		summary.StatusLabel = "Awaiting produced ref"
+		summary.Severity = "warning"
+		summary.Detail = "Link the commit created by this attempt before completion."
+	case !summary.ProducedForCurrentClaim:
+		summary.Status = "stale_produced"
+		summary.StatusLabel = "Stale produced ref"
+		summary.Severity = "warning"
+		summary.Detail = "The latest produced ref predates the current claim. Link a fresh produced commit for this attempt."
+	case !summary.BranchAligned:
+		summary.Status = "branch_mismatch"
+		summary.StatusLabel = "Branch mismatch"
+		summary.Severity = "critical"
+		summary.Detail = "Produced commit is on a different branch than the rerun marker. Verify recovery metadata."
+	default:
+		summary.Status = "ready"
+		summary.StatusLabel = "Recovery refs ready"
+		summary.Severity = "success"
+		summary.Detail = "Baseline and produced refs are linked for this task."
+	}
+
+	return summary
+}
+
 func interruptionMetadata(reason string, hasCheckpoint bool) (string, string, []string) {
 	switch reason {
 	case "lease_expired_reconcile":
@@ -1080,6 +1166,7 @@ func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID i
 		}
 		ctxOut.GitRefs = append(ctxOut.GitRefs, ref)
 	}
+	ctxOut.GitRecovery = buildGitRecoverySummary(ctxOut.EffectiveGitPolicy, ctxOut.GitRefs, ctxOut.Task.StartedAt)
 
 	writeJSON(w, http.StatusOK, ctxOut)
 }
