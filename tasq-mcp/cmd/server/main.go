@@ -115,9 +115,11 @@ type linkGitRefArgs struct {
 }
 
 type createProjectArgs struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	GitPolicy   string `json:"git_policy,omitempty"`
+	Name          string `json:"name"`
+	Description   string `json:"description,omitempty"`
+	GitPolicy     string `json:"git_policy,omitempty"`
+	ExecutionMode string `json:"execution_mode,omitempty"`
+	PlanState     string `json:"plan_state,omitempty"`
 }
 
 type createTaskArgs struct {
@@ -507,9 +509,11 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 						"inputSchema": map[string]any{
 							"type": "object",
 							"properties": map[string]any{
-								"name":        map[string]any{"type": "string"},
-								"description": map[string]any{"type": "string"},
-								"git_policy":  map[string]any{"type": "string", "enum": []string{"optional", "required"}},
+								"name":           map[string]any{"type": "string"},
+								"description":    map[string]any{"type": "string"},
+								"git_policy":     map[string]any{"type": "string", "enum": []string{"optional", "required"}},
+								"execution_mode": map[string]any{"type": "string", "enum": []string{"manual", "agent_assisted", "agent_autonomous"}},
+								"plan_state":     map[string]any{"type": "string", "enum": []string{"draft", "approved", "archived"}},
 							},
 							"required": []string{"name"},
 						},
@@ -765,9 +769,11 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 				return toolError(err)
 			}
 			resBody, err := tasqJSON(cfg, http.MethodPost, "/projects", map[string]any{
-				"name":        strings.TrimSpace(args.Name),
-				"description": strings.TrimSpace(args.Description),
-				"git_policy":  strings.TrimSpace(args.GitPolicy),
+				"name":           strings.TrimSpace(args.Name),
+				"description":    strings.TrimSpace(args.Description),
+				"git_policy":     strings.TrimSpace(args.GitPolicy),
+				"execution_mode": strings.TrimSpace(args.ExecutionMode),
+				"plan_state":     strings.TrimSpace(args.PlanState),
 			}, adminToken)
 			if err != nil {
 				return toolError(err)

@@ -136,6 +136,36 @@ Spawner behavior:
 - supervises queue progress via `GET /projects/:id/runtime-alerts`
 - respawns workers only while useful work may still progress
 - stops immediately when any task has exhausted `max_attempts`
+- refuses to start when `plan_state` is not `approved`
+- refuses to start when `execution_mode` is `manual`
+
+## Plan approval and execution modes
+TasQ separates plan review from agent execution at the project level.
+
+- `execution_mode`
+  - `manual`: plan and track only; worker claims are blocked
+  - `agent_assisted`: workers may run after human approval
+  - `agent_autonomous`: workers may run after approval with minimal human intervention
+- `plan_state`
+  - `draft`: still under review; worker claims are blocked
+  - `approved`: workers may claim if execution mode allows it
+  - `archived`: historical project state
+
+Recommended defaults:
+- human-only planning project:
+  - `git_policy="optional"`
+  - `execution_mode="manual"`
+  - `plan_state="approved"`
+- agent-driven code project:
+  - `git_policy="required"`
+  - `execution_mode="agent_assisted"`
+  - `plan_state="draft"` during planning
+
+Suggested flow:
+1. planner creates the project and task tree
+2. user reviews it in the web UI
+3. user changes `plan_state` to `approved`
+4. then workers or the spawner can start
 
 Why stop on `max_attempts` exhaustion:
 - TasQ uses at-least-once execution semantics
@@ -154,6 +184,8 @@ Use this in a fresh Codex CLI session after `tasq-http` MCP is registered:
 - Agent code project example: [docs/planner_example_agent_code_project.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/planner_example_agent_code_project.md)
 - Worker spec sample: [examples/workers.sample.json](/Users/jung-yeon-woo/Development/Projects/tasq/examples/workers.sample.json)
 - Worker spec schema: [schemas/workers.schema.json](/Users/jung-yeon-woo/Development/Projects/tasq/schemas/workers.schema.json)
+- Agent execution demo: [docs/demo_agent_git_execution.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_agent_git_execution.md)
+- Manual planning demo: [docs/demo_manual_plan_only.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_manual_plan_only.md)
 
 ```text
 You are a planning agent working with TasQ via MCP tools.
@@ -168,7 +200,14 @@ Rules:
 - Keep at least one root task immediately claimable by a generic worker.
 - Prefer vertical decomposition over wide sibling trees when tasks will touch the same files or modules.
 - Keep root tasks few and meaningful; parallelize only when the work is clearly merge-safe.
-- For agent-driven code projects, create the project with `git_policy="required"` unless there is a concrete reason not to.
+- For agent-driven code projects, create the project with:
+  - `git_policy="required"`
+  - `execution_mode="agent_assisted"`
+  - `plan_state="draft"`
+- For human-only planning projects, prefer:
+  - `git_policy="optional"`
+  - `execution_mode="manual"`
+  - `plan_state="approved"`
 - Prefer generic capability labels: go, cli, integration, testing, docs.
 - Do not implement code in this session.
 - At the end, report the numeric project_id.
@@ -193,6 +232,11 @@ At the end, print:
 - path to workers.json
 - checklist review summary
 ```
+
+Before starting workers:
+- review the project in the web UI
+- change `plan_state` to `approved`
+- keep `execution_mode` in an agent mode
 
 ### 2) Start workers automatically
 ```bash
@@ -249,6 +293,9 @@ PROJECT_ID=1 ./scripts/agent_worker_demo.sh
 PROJECT_ID=1 ACTION=fail ./scripts/agent_worker_demo.sh
 PROJECT_ID=1 ACTION=release ./scripts/agent_worker_demo.sh
 ```
+
+## Manual planning demo
+If you want planner-generated structure without worker execution, use [docs/demo_manual_plan_only.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_manual_plan_only.md).
 
 ## Smoke and regression tests
 ```bash

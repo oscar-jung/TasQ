@@ -21,11 +21,13 @@ type server struct {
 }
 
 type project struct {
-	ID          int64     `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	GitPolicy   string    `json:"git_policy"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID            int64     `json:"id"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description"`
+	GitPolicy     string    `json:"git_policy"`
+	ExecutionMode string    `json:"execution_mode"`
+	PlanState     string    `json:"plan_state"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 type task struct {
@@ -57,14 +59,18 @@ type taskDependency struct {
 }
 
 type createProjectReq struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	GitPolicy   string `json:"git_policy"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	GitPolicy     string `json:"git_policy"`
+	ExecutionMode string `json:"execution_mode"`
+	PlanState     string `json:"plan_state"`
 }
 
 type updateProjectReq struct {
-	Name      *string `json:"name"`
-	GitPolicy *string `json:"git_policy"`
+	Name          *string `json:"name"`
+	GitPolicy     *string `json:"git_policy"`
+	ExecutionMode *string `json:"execution_mode"`
+	PlanState     *string `json:"plan_state"`
 }
 
 type createTaskReq struct {

@@ -17,6 +17,8 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
   - Purpose: create a new project.
   - Optional body field:
     - `git_policy`: `optional` or `required`
+    - `execution_mode`: `manual`, `agent_assisted`, or `agent_autonomous`
+    - `plan_state`: `draft`, `approved`, or `archived`
 
 - `PATCH /projects/:project_id`
   - Handler: `(*server).updateProject` in `internal/server/projects.go`
@@ -24,6 +26,8 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
   - Optional body fields:
     - `name`
     - `git_policy`
+    - `execution_mode`
+    - `plan_state`
 
 - `DELETE /projects/:project_id`
   - Handler: `(*server).deleteProject` in `internal/server/projects.go`
@@ -175,6 +179,9 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
   - Handler: `(*server).claimNext` in `internal/server/agents.go`
   - Purpose: atomically claim the next executable task.
   - Includes auto stale-claim reconciliation for the target project before selection.
+  - Returns no task when:
+    - `projects.plan_state != approved`
+    - `projects.execution_mode == manual`
   - Optional request field: `capabilities` string array.
     - If task has non-empty `required_capabilities`, all required values must be included in `capabilities`.
 

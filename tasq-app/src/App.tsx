@@ -19,6 +19,8 @@ type Project = {
   name: string
   description: string
   git_policy: 'optional' | 'required'
+  execution_mode: 'manual' | 'agent_assisted' | 'agent_autonomous'
+  plan_state: 'draft' | 'approved' | 'archived'
 }
 
 type TaskContentPatch = {
@@ -256,6 +258,8 @@ export function App() {
   const [editingProjectID, setEditingProjectID] = useState<number | null>(null)
   const [editingProjectName, setEditingProjectName] = useState('')
   const [editingProjectGitPolicy, setEditingProjectGitPolicy] = useState<'optional' | 'required'>('optional')
+  const [editingProjectExecutionMode, setEditingProjectExecutionMode] = useState<Project['execution_mode']>('manual')
+  const [editingProjectPlanState, setEditingProjectPlanState] = useState<Project['plan_state']>('draft')
   const [deleteProjectModal, setDeleteProjectModal] = useState<Project | null>(null)
   const [isDeletingProject, setIsDeletingProject] = useState(false)
 
@@ -984,10 +988,15 @@ export function App() {
 
   async function fetchProjects() {
     const res = await fetch(`${apiBase}/projects`)
-    const raw = (await res.json()) as Array<Project & { git_policy?: string }>
+    const raw = (await res.json()) as Array<Project & { git_policy?: string; execution_mode?: string; plan_state?: string }>
     const data = raw.map((project) => ({
       ...project,
-      git_policy: project.git_policy === 'required' ? 'required' : 'optional'
+      git_policy: project.git_policy === 'required' ? 'required' : 'optional',
+      execution_mode:
+        project.execution_mode === 'agent_assisted' || project.execution_mode === 'agent_autonomous'
+          ? project.execution_mode
+          : 'manual',
+      plan_state: project.plan_state === 'approved' || project.plan_state === 'archived' ? project.plan_state : 'draft'
     }))
     setProjects(data)
     if (data.length === 0) {
@@ -1535,7 +1544,13 @@ export function App() {
     await fetch(`${apiBase}/projects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newProjectName.trim(), description: '', git_policy: 'optional' })
+      body: JSON.stringify({
+        name: newProjectName.trim(),
+        description: '',
+        git_policy: 'optional',
+        execution_mode: 'manual',
+        plan_state: 'draft'
+      })
     })
     setNewProjectName('')
     await fetchProjects()
@@ -1545,12 +1560,16 @@ export function App() {
     setEditingProjectID(project.id)
     setEditingProjectName(project.name)
     setEditingProjectGitPolicy(project.git_policy)
+    setEditingProjectExecutionMode(project.execution_mode)
+    setEditingProjectPlanState(project.plan_state)
   }
 
   function cancelProjectEdit() {
     setEditingProjectID(null)
     setEditingProjectName('')
     setEditingProjectGitPolicy('optional')
+    setEditingProjectExecutionMode('manual')
+    setEditingProjectPlanState('draft')
   }
 
   async function saveProjectEdit(projectID: number) {
@@ -1559,7 +1578,12 @@ export function App() {
     await fetch(`${apiBase}/projects/${projectID}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: trimmed, git_policy: editingProjectGitPolicy })
+      body: JSON.stringify({
+        name: trimmed,
+        git_policy: editingProjectGitPolicy,
+        execution_mode: editingProjectExecutionMode,
+        plan_state: editingProjectPlanState
+      })
     })
     cancelProjectEdit()
     await fetchProjects()
@@ -2255,6 +2279,20 @@ export function App() {
                                 git required
                               </span>
                             )}
+                            <span className="rounded-full border border-border/70 bg-muted/30 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-muted-foreground">
+                              {project.execution_mode.replace('_', ' ')}
+                            </span>
+                            <span
+                              className={`rounded-full border px-1.5 py-0.5 text-[9px] uppercase tracking-wide ${
+                                project.plan_state === 'approved'
+                                  ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200'
+                                  : project.plan_state === 'archived'
+                                    ? 'border-slate-500/50 bg-slate-500/10 text-slate-300'
+                                    : 'border-amber-500/50 bg-amber-500/10 text-amber-200'
+                              }`}
+                            >
+                              {project.plan_state}
+                            </span>
                           </div>
                         </div>
                         {badge?.loading && <span className="h-2 w-2 rounded-full bg-slate-400" />}
@@ -2283,6 +2321,26 @@ export function App() {
                           >
                             <option value="optional">git optional</option>
                             <option value="required">git required</option>
+                          </select>
+                          <select
+                            className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                            value={editingProjectExecutionMode}
+                            onChange={(e) =>
+                              setEditingProjectExecutionMode(e.target.value as Project['execution_mode'])
+                            }
+                          >
+                            <option value="manual">manual</option>
+                            <option value="agent_assisted">agent assisted</option>
+                            <option value="agent_autonomous">agent autonomous</option>
+                          </select>
+                          <select
+                            className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                            value={editingProjectPlanState}
+                            onChange={(e) => setEditingProjectPlanState(e.target.value as Project['plan_state'])}
+                          >
+                            <option value="draft">draft</option>
+                            <option value="approved">approved</option>
+                            <option value="archived">archived</option>
                           </select>
                         </div>
                         <Button size="sm" variant="ghost" onClick={() => void saveProjectEdit(project.id)}>
@@ -2341,11 +2399,32 @@ export function App() {
                 <span className="rounded-full border border-emerald-500/50 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-emerald-200">
                   Git {selectedProject.git_policy}
                 </span>
+                <span className="rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                  {selectedProject.execution_mode.replace('_', ' ')}
+                </span>
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${
+                    selectedProject.plan_state === 'approved'
+                      ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200'
+                      : selectedProject.plan_state === 'archived'
+                        ? 'border-slate-500/50 bg-slate-500/10 text-slate-300'
+                        : 'border-amber-500/50 bg-amber-500/10 text-amber-200'
+                  }`}
+                >
+                  {selectedProject.plan_state}
+                </span>
               </>
             )}
           </div>
         </CardHeader>
         <CardContent className="flex h-[calc(100%-86px)] flex-col gap-4 pt-4">
+          {selectedProject && (selectedProject.execution_mode === 'manual' || selectedProject.plan_state !== 'approved') && (
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+              {selectedProject.execution_mode === 'manual'
+                ? 'Manual mode project: TasQ will keep the plan and task state, but worker claims and auto-spawn are blocked.'
+                : 'Draft plan: review and approve the project before starting agent workers.'}
+            </div>
+          )}
           <form onSubmit={createRootTask} className="flex items-center gap-2 overflow-x-auto rounded-md border bg-muted/20 p-2">
             <Input
               value={newRootTaskTitle}

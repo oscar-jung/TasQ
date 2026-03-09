@@ -135,6 +135,36 @@ cp ./examples/workers.sample.json /abs/path/to/workers.json
 - `GET /projects/:id/runtime-alerts`로 큐 진행 상황 감독
 - 아직 진행 가능한 일이 있을 때만 워커 재기동
 - 어떤 태스크든 `max_attempts`를 소진하면 즉시 중단
+- `plan_state`가 `approved`가 아니면 시작하지 않음
+- `execution_mode`가 `manual`이면 시작하지 않음
+
+## 플랜 승인과 실행 모드
+TasQ는 project 레벨에서 계획 검토와 agent 실행을 분리한다.
+
+- `execution_mode`
+  - `manual`: 계획과 추적만 수행, worker claim 차단
+  - `agent_assisted`: 사람이 승인한 뒤 worker 실행 가능
+  - `agent_autonomous`: 승인 후 최소 개입으로 worker 실행 가능
+- `plan_state`
+  - `draft`: 아직 검토 중, worker claim 차단
+  - `approved`: 실행 모드가 허용하면 worker claim 가능
+  - `archived`: 기록 보관 상태
+
+권장 기본값:
+- 사람만 쓰는 플랜 project:
+  - `git_policy="optional"`
+  - `execution_mode="manual"`
+  - `plan_state="approved"`
+- agent 중심 코드 project:
+  - `git_policy="required"`
+  - `execution_mode="agent_assisted"`
+  - `plan_state="draft"`
+
+권장 흐름:
+1. planner가 project와 tree를 생성
+2. 사람이 웹 UI에서 검토
+3. 사람이 `plan_state`를 `approved`로 변경
+4. 그 다음에만 worker 또는 spawner 시작
 
 `max_attempts` 소진 시 즉시 멈추는 이유:
 - TasQ는 `at-least-once` 실행 모델이라 워커 재시작 자체는 허용됨
@@ -153,6 +183,8 @@ cp ./examples/workers.sample.json /abs/path/to/workers.json
 - 에이전트 코드 프로젝트 예시: [docs/planner_example_agent_code_project.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/planner_example_agent_code_project.md)
 - 워커 스펙 샘플: [examples/workers.sample.json](/Users/jung-yeon-woo/Development/Projects/tasq/examples/workers.sample.json)
 - 워커 스펙 스키마: [schemas/workers.schema.json](/Users/jung-yeon-woo/Development/Projects/tasq/schemas/workers.schema.json)
+- 에이전트 실행 데모: [docs/demo_agent_git_execution.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_agent_git_execution.md)
+- 수동 플랜 데모: [docs/demo_manual_plan_only.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_manual_plan_only.md)
 
 ```text
 You are a planning agent working with TasQ via MCP tools.
@@ -167,7 +199,14 @@ Rules:
 - Keep at least one root task immediately claimable by a generic worker.
 - 같은 파일이나 모듈을 건드릴 가능성이 높다면 넓은 sibling 구조보다 수직 체인 구조를 우선해.
 - 루트 태스크 수는 과도하게 늘리지 말고, 병렬화는 실제로 merge-safe한 경우에만 허용해.
-- agent 중심 코드 프로젝트라면 특별한 이유가 없는 한 project를 `git_policy="required"`로 생성해.
+- agent 중심 코드 프로젝트라면 project를 다음과 같이 생성해.
+  - `git_policy="required"`
+  - `execution_mode="agent_assisted"`
+  - `plan_state="draft"`
+- 사람만 쓰는 플랜 프로젝트라면 보통 다음이 맞다.
+  - `git_policy="optional"`
+  - `execution_mode="manual"`
+  - `plan_state="approved"`
 - Prefer generic capability labels: go, cli, integration, testing, docs.
 - Do not implement code in this session.
 - At the end, report the numeric project_id.
@@ -192,6 +231,11 @@ At the end, print:
 - path to workers.json
 - checklist review summary
 ```
+
+worker 시작 전에는:
+- 웹 UI에서 project를 검토하고
+- `plan_state`를 `approved`로 바꾸고
+- `execution_mode`가 agent 모드인지 확인해
 
 ### 2) 워커 자동 실행
 ```bash
@@ -248,6 +292,9 @@ PROJECT_ID=1 ./scripts/agent_worker_demo.sh
 PROJECT_ID=1 ACTION=fail ./scripts/agent_worker_demo.sh
 PROJECT_ID=1 ACTION=release ./scripts/agent_worker_demo.sh
 ```
+
+## 수동 플랜 데모
+worker 없이 planner가 만든 구조만 쓰고 싶다면 [docs/demo_manual_plan_only.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_manual_plan_only.md)를 참고해.
 
 ## 스모크/회귀 테스트
 ```bash

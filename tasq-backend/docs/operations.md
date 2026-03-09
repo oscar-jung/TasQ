@@ -106,6 +106,14 @@ cat tasq_backup.sql | docker compose exec -T db psql -U tasq -d tasq
   - use `ref_kind=rerun_branch` for the branch marker/ref you want operators to resume on
   - use `ref_kind=produced` for the commit created by the rerun
 - For agent-driven code projects, prefer `projects.git_policy=required`.
+- For human-only planning projects, prefer:
+  - `projects.execution_mode=manual`
+  - `projects.plan_state=approved`
+  - `projects.git_policy=optional`
+- For agent execution projects, prefer:
+  - `projects.execution_mode=agent_assisted`
+  - `projects.plan_state=draft` during planning
+  - change to `approved` only after human review
 - Under required git policy:
   - workers should link `baseline` before editing
   - workers should link `produced` before calling `complete`

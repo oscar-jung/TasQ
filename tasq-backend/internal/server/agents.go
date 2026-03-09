@@ -42,6 +42,30 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 	}
 	capabilities := normalizeCapabilities(req.Capabilities)
 
+	executionMode, planState, err := s.fetchProjectExecutionState(r.Context(), req.ProjectID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "project not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if planState != "approved" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"task":    nil,
+			"message": "project plan is not approved",
+		})
+		return
+	}
+	if executionMode == "manual" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"task":    nil,
+			"message": "project execution mode is manual",
+		})
+		return
+	}
+
 	tx, err := s.db.BeginTx(r.Context(), nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -186,6 +210,19 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 			"lease_seconds": req.LeaseSeconds,
 		},
 	})
+}
+
+func (s *server) fetchProjectExecutionState(ctx context.Context, projectID int64) (string, string, error) {
+	var executionMode string
+	var planState string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT execution_mode, plan_state
+		FROM projects
+		WHERE id = $1`, projectID).Scan(&executionMode, &planState)
+	if err != nil {
+		return "", "", err
+	}
+	return executionMode, planState, nil
 }
 
 // heartbeatTaskClaim handles POST /tasks/:task_id/heartbeat.

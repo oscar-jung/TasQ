@@ -14,7 +14,15 @@ Use TasQ MCP admin tools to create:
 - root and child tasks
 - dependencies for execution order
 - capability labels for specialized tasks
-For agent-driven code projects, create the project with `git_policy="required"` unless there is a concrete reason not to.
+For agent-driven code projects, create the project with:
+- `git_policy="required"`
+- `execution_mode="agent_assisted"`
+- `plan_state="draft"`
+
+For human-only planning projects, prefer:
+- `git_policy="optional"`
+- `execution_mode="manual"`
+- `plan_state="approved"`
 Keep tasks small enough to finish in one focused work chunk.
 Use required_capabilities sparingly.
 Keep at least one root task immediately claimable by a generic worker.

@@ -89,6 +89,27 @@ if [[ "${WORKER_COUNT}" -eq 0 ]]; then
   exit 1
 fi
 
+project_json="$(curl -sS "${API_BASE}/projects" | jq -c --argjson id "${PROJECT_ID}" '[.[] | select(.id == $id)][0]')"
+if [[ -z "${project_json}" || "${project_json}" == "null" ]]; then
+  echo "[error] project ${PROJECT_ID} was not found at ${API_BASE}"
+  exit 1
+fi
+
+project_execution_mode="$(echo "${project_json}" | jq -r '.execution_mode // "manual"')"
+project_plan_state="$(echo "${project_json}" | jq -r '.plan_state // "draft"')"
+
+if [[ "${project_plan_state}" != "approved" ]]; then
+  echo "[error] project ${PROJECT_ID} is not approved (plan_state=${project_plan_state})"
+  echo "[hint] approve the plan in the web UI or via PATCH /projects/${PROJECT_ID} before spawning workers"
+  exit 1
+fi
+
+if [[ "${project_execution_mode}" == "manual" ]]; then
+  echo "[error] project ${PROJECT_ID} is in manual execution mode"
+  echo "[hint] switch execution_mode to agent_assisted or agent_autonomous before spawning workers"
+  exit 1
+fi
+
 if [[ -z "${LOG_DIR}" || "${LOG_DIR}" == "null" ]]; then
   LOG_DIR="/tmp/tasq-spawn-${PROJECT_ID}-$(date +%Y%m%d%H%M%S)"
 fi

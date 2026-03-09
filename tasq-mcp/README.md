@@ -19,7 +19,8 @@ MCP server for TasQ runtime integration. It supports both `stdio` and HTTP trans
   - `tasq_complete_task`
   - `tasq_fail_task`
   - `tasq_link_git_ref`
-  - `tasq_create_project`
+- `tasq_create_project`
+  - supports `git_policy`, `execution_mode`, and `plan_state`
   - `tasq_create_task`
   - `tasq_add_dependency`
   - `tasq_set_task_capabilities`

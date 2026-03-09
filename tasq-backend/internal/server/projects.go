@@ -21,14 +21,16 @@ func (s *server) createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.GitPolicy = normalizeProjectGitPolicy(req.GitPolicy)
+	req.ExecutionMode = normalizeProjectExecutionMode(req.ExecutionMode)
+	req.PlanState = normalizeProjectPlanState(req.PlanState)
 
 	var p project
 	err := s.db.QueryRowContext(r.Context(), `
-		INSERT INTO projects(name, description, git_policy)
-		VALUES ($1, $2, $3)
-		RETURNING id, name, description, git_policy, created_at`,
-		req.Name, req.Description, req.GitPolicy,
-	).Scan(&p.ID, &p.Name, &p.Description, &p.GitPolicy, &p.CreatedAt)
+		INSERT INTO projects(name, description, git_policy, execution_mode, plan_state)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, name, description, git_policy, execution_mode, plan_state, created_at`,
+		req.Name, req.Description, req.GitPolicy, req.ExecutionMode, req.PlanState,
+	).Scan(&p.ID, &p.Name, &p.Description, &p.GitPolicy, &p.ExecutionMode, &p.PlanState, &p.CreatedAt)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -44,13 +46,15 @@ func (s *server) updateProject(w http.ResponseWriter, r *http.Request, projectID
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	if req.Name == nil && req.GitPolicy == nil {
+	if req.Name == nil && req.GitPolicy == nil && req.ExecutionMode == nil && req.PlanState == nil {
 		http.Error(w, "nothing to update", http.StatusBadRequest)
 		return
 	}
 	var (
-		nameValue *string
-		gitPolicy string
+		nameValue     *string
+		gitPolicy     string
+		executionMode string
+		planState     string
 	)
 	if req.Name != nil {
 		trimmed := strings.TrimSpace(*req.Name)
@@ -63,13 +67,21 @@ func (s *server) updateProject(w http.ResponseWriter, r *http.Request, projectID
 	if req.GitPolicy != nil {
 		gitPolicy = normalizeProjectGitPolicy(*req.GitPolicy)
 	}
+	if req.ExecutionMode != nil {
+		executionMode = normalizeProjectExecutionMode(*req.ExecutionMode)
+	}
+	if req.PlanState != nil {
+		planState = normalizeProjectPlanState(*req.PlanState)
+	}
 
 	res, err := s.db.ExecContext(r.Context(), `
 		UPDATE projects
 		SET name = COALESCE($2, name),
 			git_policy = CASE WHEN $3 = '' THEN git_policy ELSE $3 END,
+			execution_mode = CASE WHEN $4 = '' THEN execution_mode ELSE $4 END,
+			plan_state = CASE WHEN $5 = '' THEN plan_state ELSE $5 END,
 			updated_at = NOW()
-		WHERE id = $1`, projectID, nameValue, gitPolicy)
+		WHERE id = $1`, projectID, nameValue, gitPolicy, executionMode, planState)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -110,7 +122,7 @@ func (s *server) deleteProject(w http.ResponseWriter, r *http.Request, projectID
 // listProjects handles GET /projects.
 func (s *server) listProjects(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.QueryContext(r.Context(), `
-		SELECT id, name, description, git_policy, created_at
+		SELECT id, name, description, git_policy, execution_mode, plan_state, created_at
 		FROM projects
 		ORDER BY created_at ASC`)
 	if err != nil {
@@ -123,7 +135,7 @@ func (s *server) listProjects(w http.ResponseWriter, r *http.Request) {
 	actor := actorFromContext(r.Context())
 	for rows.Next() {
 		var p project
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.GitPolicy, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.GitPolicy, &p.ExecutionMode, &p.PlanState, &p.CreatedAt); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -133,6 +145,32 @@ func (s *server) listProjects(w http.ResponseWriter, r *http.Request) {
 		out = append(out, p)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func normalizeProjectExecutionMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", "manual":
+		return "manual"
+	case "agent_assisted":
+		return "agent_assisted"
+	case "agent_autonomous":
+		return "agent_autonomous"
+	default:
+		return "manual"
+	}
+}
+
+func normalizeProjectPlanState(state string) string {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "", "draft":
+		return "draft"
+	case "approved":
+		return "approved"
+	case "archived":
+		return "archived"
+	default:
+		return "draft"
+	}
 }
 
 // listProjectTasks handles GET /projects/:project_id/tasks.
