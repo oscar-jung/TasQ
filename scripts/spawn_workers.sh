@@ -120,6 +120,42 @@ WORKER_LABELS=()
 WORKER_SPECS_JSON="$(jq -c '.workers' "${SPEC_FILE}")"
 PREV_RUNTIME_SUMMARY=""
 PREV_DONE_IDS=""
+SPINNER_INDEX=0
+SPINNER_FRAMES='|/-\'
+IS_TTY=0
+
+if [[ -t 1 ]]; then
+  IS_TTY=1
+fi
+
+print_watch_spinner() {
+  local seconds_remaining="$1"
+  local frame
+  frame="${SPINNER_FRAMES:SPINNER_INDEX:1}"
+  SPINNER_INDEX=$(((SPINNER_INDEX + 1) % 4))
+  printf '\r[watch] polling again in %2ss %s' "${seconds_remaining}" "${frame}"
+}
+
+clear_watch_spinner() {
+  if [[ "${IS_TTY}" -eq 1 ]]; then
+    printf '\r\033[2K'
+  fi
+}
+
+sleep_with_spinner() {
+  local seconds="$1"
+  if [[ "${IS_TTY}" -ne 1 ]]; then
+    sleep "${seconds}"
+    return
+  fi
+
+  local remaining
+  for ((remaining = seconds; remaining > 0; remaining -= 1)); do
+    print_watch_spinner "${remaining}"
+    sleep 1
+  done
+  clear_watch_spinner
+}
 
 print_runtime_summary() {
   local runtime_json="$1"
@@ -371,7 +407,7 @@ done
 idle_cycles=0
 api_failures=0
 while true; do
-  sleep "${POLL_SECONDS}"
+  sleep_with_spinner "${POLL_SECONDS}"
   if ! runtime_json="$(fetch_runtime)"; then
     api_failures=$((api_failures + 1))
     if [[ "${api_failures}" -ge 5 ]]; then
