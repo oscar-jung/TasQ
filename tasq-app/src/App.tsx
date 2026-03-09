@@ -6,7 +6,7 @@ import {
   useRef,
   useState
 } from 'react'
-import { Check, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -147,6 +147,7 @@ type TreeValidationReport = {
 }
 
 const apiBase = import.meta.env.VITE_API_BASE ?? 'http://localhost:8080'
+const selectedProjectStorageKey = 'tasq.selectedProjectID'
 
 function buildProjectAlertBadge(data: RuntimeAlertsResponse): ProjectAlertBadge {
   return {
@@ -167,7 +168,13 @@ function buildProjectAlertBadge(data: RuntimeAlertsResponse): ProjectAlertBadge 
 export function App() {
   const [projects, setProjects] = useState<Project[]>([])
   const [projectAlertBadges, setProjectAlertBadges] = useState<Record<number, ProjectAlertBadge>>({})
-  const [selectedProjectID, setSelectedProjectID] = useState<number | null>(null)
+  const [selectedProjectID, setSelectedProjectID] = useState<number | null>(() => {
+    if (typeof window === 'undefined') return null
+    const raw = window.localStorage.getItem(selectedProjectStorageKey)
+    if (!raw) return null
+    const parsed = Number(raw)
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+  })
   const [newProjectName, setNewProjectName] = useState('')
 
   const [editingProjectID, setEditingProjectID] = useState<number | null>(null)
@@ -234,6 +241,7 @@ export function App() {
   const [validationError, setValidationError] = useState('')
   const [validationDialog, setValidationDialog] = useState<TreeValidationReport | null>(null)
   const [isCleansingTree, setIsCleansingTree] = useState(false)
+  const [isExecutionOpen, setIsExecutionOpen] = useState(false)
 
   const treeViewportRef = useRef<HTMLDivElement | null>(null)
   const isPanningRef = useRef(false)
@@ -357,6 +365,15 @@ export function App() {
   useEffect(() => {
     void fetchProjects()
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (selectedProjectID === null) {
+      window.localStorage.removeItem(selectedProjectStorageKey)
+      return
+    }
+    window.localStorage.setItem(selectedProjectStorageKey, String(selectedProjectID))
+  }, [selectedProjectID])
 
   useEffect(() => {
     if (selectedProjectID) {
@@ -1846,7 +1863,7 @@ export function App() {
         <CardHeader>
           <CardTitle className="font-semibold tracking-tight">Task Detail</CardTitle>
         </CardHeader>
-        <CardContent className="h-[calc(100%-70px)]">
+        <CardContent className="h-[calc(100%-70px)] overflow-y-auto pr-1">
           {!selectedTask && (
             <div className="h-full rounded-md border border-dashed bg-muted/30 p-4 text-sm text-muted-foreground">
               Select a task in the tree.
@@ -1854,8 +1871,8 @@ export function App() {
           )}
 
           {selectedTask && (
-            <div className="flex h-full flex-col gap-4">
-              <div className="rounded-md border bg-muted/20 p-3">
+              <div className="flex h-full flex-col gap-4">
+                <div className="rounded-md border bg-muted/20 p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Task Name</p>
@@ -1952,431 +1969,13 @@ export function App() {
                 </div>
               </div>
 
-              <div className="rounded-md border bg-muted/20 p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Execution</p>
-                <div className="mt-2 flex items-end gap-2">
-                  <div className="w-28">
-                    <p className="mb-1 text-[11px] text-muted-foreground">Max attempts</p>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={maxAttemptsDraft}
-                      onChange={(e) => setMaxAttemptsDraft(e.target.value)}
-                      className="h-9"
-                    />
-                  </div>
-                  <Button size="sm" variant="outline" disabled={isSavingExecutionPolicy} onClick={() => void saveExecutionPolicy()}>
-                    {isSavingExecutionPolicy ? 'Saving...' : 'Save policy'}
-                  </Button>
-                </div>
-
-                <div className="mt-3">
-                  <p className="mb-1 text-[11px] text-muted-foreground">Required capabilities (comma separated)</p>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      placeholder="go, backend, tests"
-                      value={requiredCapabilitiesDraft}
-                      onChange={(e) => setRequiredCapabilitiesDraft(e.target.value)}
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="shrink-0 whitespace-nowrap"
-                      disabled={isSavingCapabilities}
-                      onClick={() => void saveTaskCapabilities()}
-                    >
-                      {isSavingCapabilities ? 'Saving...' : 'Save capabilities'}
-                    </Button>
-                  </div>
-                </div>
-
-                <form className="mt-3 space-y-2" onSubmit={saveGitLink}>
-                  <p className="text-[11px] text-muted-foreground">Link Git result</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      placeholder="repo"
-                      value={gitRepoDraft}
-                      onChange={(e) => setGitRepoDraft(e.target.value)}
-                      disabled={isSavingGitLink}
-                    />
-                    <Input
-                      placeholder="branch"
-                      value={gitBranchDraft}
-                      onChange={(e) => setGitBranchDraft(e.target.value)}
-                      disabled={isSavingGitLink}
-                    />
-                    <Input
-                      placeholder="base commit"
-                      value={gitBaseCommitDraft}
-                      onChange={(e) => setGitBaseCommitDraft(e.target.value)}
-                      disabled={isSavingGitLink}
-                    />
-                    <Input
-                      placeholder="commit sha"
-                      value={gitCommitDraft}
-                      onChange={(e) => setGitCommitDraft(e.target.value)}
-                      disabled={isSavingGitLink}
-                    />
-                  </div>
-                  <div className="flex justify-end">
-                    <Button type="submit" size="sm" variant="outline" disabled={isSavingGitLink}>
-                      {isSavingGitLink ? 'Linking...' : 'Add Git Link'}
-                    </Button>
-                  </div>
-                </form>
-
-                {isLoadingTaskContext && <p className="mt-3 text-xs text-muted-foreground">Loading execution context...</p>}
-                {taskContextError && <p className="mt-3 text-xs text-red-300">{taskContextError}</p>}
-
-                {taskContext && (
-                  <div className="mt-3 grid gap-3">
-                    <div className="rounded-md border bg-background/40 p-2">
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Observability Filters</p>
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        <Input
-                          placeholder="event type (e.g. task.failed)"
-                          value={eventTypeFilter}
-                          onChange={(e) => setEventTypeFilter(e.target.value)}
-                        />
-                        <Input
-                          placeholder="actor (type:id)"
-                          value={eventActorFilter}
-                          onChange={(e) => setEventActorFilter(e.target.value)}
-                        />
-                        <Input
-                          type="datetime-local"
-                          value={eventFromDraft}
-                          onChange={(e) => setEventFromDraft(e.target.value)}
-                        />
-                        <Input
-                          type="datetime-local"
-                          value={eventToDraft}
-                          onChange={(e) => setEventToDraft(e.target.value)}
-                        />
-                        <Input
-                          placeholder="run agent filter"
-                          value={runAgentFilter}
-                          onChange={(e) => setRunAgentFilter(e.target.value)}
-                        />
-                        <select
-                          className="h-10 rounded-md border border-border bg-background px-2 text-sm"
-                          value={runStatusFilter}
-                          onChange={(e) =>
-                            setRunStatusFilter(
-                              e.target.value as 'all' | 'running' | 'completed' | 'failed' | 'released'
-                            )
-                          }
-                        >
-                          <option value="all">All run statuses</option>
-                          <option value="running">running</option>
-                          <option value="completed">completed</option>
-                          <option value="failed">failed</option>
-                          <option value="released">released</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="rounded-md border bg-background/40 p-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Runtime Alerts</p>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            className="h-8 w-28"
-                            type="number"
-                            min={1}
-                            placeholder="stale sec"
-                            value={heartbeatAlertThresholdDraft}
-                            onChange={(e) => setHeartbeatAlertThresholdDraft(e.target.value)}
-                          />
-                          <Button size="sm" variant="outline" onClick={() => void refreshRuntimeAlerts()} disabled={isLoadingRuntimeAlerts}>
-                            {isLoadingRuntimeAlerts ? 'Refreshing...' : 'Refresh'}
-                          </Button>
-                        </div>
-                      </div>
-                      {runtimeAlertsError && <p className="mt-2 text-xs text-red-300">{runtimeAlertsError}</p>}
-                      {!runtimeAlertsError && !runtimeAlerts && isLoadingRuntimeAlerts && (
-                        <p className="mt-2 text-xs text-muted-foreground">Loading runtime alerts...</p>
-                      )}
-                      {runtimeAlerts && (
-                        <div className="mt-2 space-y-2">
-                          <div className="grid grid-cols-2 gap-2 text-xs xl:grid-cols-4">
-                            <div className="rounded border border-border/60 bg-background/60 p-1.5">
-                              <p className="text-muted-foreground">Queue</p>
-                              <p className="font-semibold">
-                                {runtimeAlerts.done_tasks}/{runtimeAlerts.total_tasks} done
-                              </p>
-                              <p className="text-[11px] text-muted-foreground">
-                                {runtimeAlerts.claimable_tasks} claimable · {runtimeAlerts.blocked_planned_tasks} blocked
-                              </p>
-                            </div>
-                            <div className="rounded border border-border/60 bg-background/60 p-1.5">
-                              <p className="text-muted-foreground">Stale Claims</p>
-                              <p className="font-semibold">{runtimeAlerts.stale_active_claims.length}</p>
-                            </div>
-                            <div className="rounded border border-border/60 bg-background/60 p-1.5">
-                              <p className="text-muted-foreground">Heartbeat Overdue</p>
-                              <p className="font-semibold">{runtimeAlerts.heartbeat_overdue_claims.length}</p>
-                            </div>
-                            <div className="rounded border border-border/60 bg-background/60 p-1.5">
-                              <p className="text-muted-foreground">Orphan In Progress</p>
-                              <p className="font-semibold">{runtimeAlerts.orphan_in_progress_tasks.length}</p>
-                            </div>
-                            <div className="rounded border border-border/60 bg-background/60 p-1.5">
-                              <p className="text-muted-foreground">Exhausted Tasks</p>
-                              <p className="font-semibold">{runtimeAlerts.exhausted_tasks.length}</p>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-1 gap-2 xl:grid-cols-4">
-                            <div className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
-                              <p className="mb-1 font-medium text-foreground/90">Stale Claims</p>
-                              <div className="max-h-24 space-y-1 overflow-y-auto">
-                                {runtimeAlerts.stale_active_claims.length === 0 && (
-                                  <p className="text-muted-foreground">None</p>
-                                )}
-                                {runtimeAlerts.stale_active_claims.map((item) => (
-                                  <p key={item.claim_id} className="text-muted-foreground">
-                                    C#{item.claim_id} T#{item.task_id} {item.agent_id}
-                                  </p>
-                                ))}
-                              </div>
-                            </div>
-                            <div className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
-                              <p className="mb-1 font-medium text-foreground/90">Heartbeat Overdue</p>
-                              <div className="max-h-24 space-y-1 overflow-y-auto">
-                                {runtimeAlerts.heartbeat_overdue_claims.length === 0 && (
-                                  <p className="text-muted-foreground">None</p>
-                                )}
-                                {runtimeAlerts.heartbeat_overdue_claims.map((item) => (
-                                  <p key={item.claim_id} className="text-muted-foreground">
-                                    C#{item.claim_id} T#{item.task_id} {item.seconds_since_heartbeat}s
-                                  </p>
-                                ))}
-                              </div>
-                            </div>
-                            <div className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
-                              <p className="mb-1 font-medium text-foreground/90">Orphan In Progress</p>
-                              <div className="max-h-24 space-y-1 overflow-y-auto">
-                                {runtimeAlerts.orphan_in_progress_tasks.length === 0 && (
-                                  <p className="text-muted-foreground">None</p>
-                                )}
-                                {runtimeAlerts.orphan_in_progress_tasks.map((item) => (
-                                  <p key={item.task_id} className="text-muted-foreground">
-                                    T#{item.task_id}
-                                  </p>
-                                ))}
-                              </div>
-                            </div>
-                            <div className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
-                              <p className="mb-1 font-medium text-foreground/90">Exhausted Tasks</p>
-                              <div className="max-h-24 space-y-1 overflow-y-auto">
-                                {runtimeAlerts.exhausted_tasks.length === 0 && (
-                                  <p className="text-muted-foreground">None</p>
-                                )}
-                                {runtimeAlerts.exhausted_tasks.map((item) => (
-                                  <p key={item.task_id} className="text-muted-foreground">
-                                    T#{item.task_id} {item.title} ({item.attempts_used}/{item.max_attempts})
-                                  </p>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Recent Runs</p>
-                      {filteredRuns.length === 0 && (
-                        <p className="mt-1 text-xs text-muted-foreground">No run history yet.</p>
-                      )}
-                      {filteredRuns.length > 0 && (
-                        <div className="mt-1 max-h-32 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
-                          {filteredRuns.map((run) => (
-                            <div key={run.id} className="flex items-center justify-between text-xs">
-                              <span className="truncate text-muted-foreground">
-                                #{run.attempt_no} {run.agent_id}
-                              </span>
-                              <span className="uppercase text-foreground/85">{run.status}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Git Refs</p>
-                      {taskContext.git_refs.length === 0 && (
-                        <p className="mt-1 text-xs text-muted-foreground">No git refs linked yet.</p>
-                      )}
-                      {taskContext.git_refs.length > 0 && (
-                        <div className="mt-1 max-h-32 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
-                          {taskContext.git_refs.map((ref) => (
-                            <div key={ref.id} className="text-xs">
-                              <p className="truncate text-foreground/90">
-                                {ref.repo} · {ref.branch}
-                              </p>
-                              <p className="truncate text-muted-foreground">
-                                {ref.base_commit.slice(0, 12)} → {ref.commit_sha.slice(0, 12)}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-                      <div>
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Task Events</p>
-                        {isLoadingTaskEvents && <p className="mt-1 text-xs text-muted-foreground">Loading task events...</p>}
-                        {taskEventsError && <p className="mt-1 text-xs text-red-300">{taskEventsError}</p>}
-                        {!isLoadingTaskEvents && !taskEventsError && filteredTaskEvents.length === 0 && (
-                          <p className="mt-1 text-xs text-muted-foreground">No task events yet.</p>
-                        )}
-                        {filteredTaskEvents.length > 0 && (
-                          <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
-                            {filteredTaskEvents.map((event) => (
-                              <div key={event.id} className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
-                                <p className="font-medium text-foreground/90">{event.event_type}</p>
-                                <p className="text-muted-foreground">
-                                  {event.actor_type}:{event.actor_id} · {formatEventTime(event.created_at)}
-                                </p>
-                                <p className="truncate text-muted-foreground">{formatPayload(event.payload ?? {})}</p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Project Events</p>
-                        {isLoadingProjectEvents && (
-                          <p className="mt-1 text-xs text-muted-foreground">Loading project events...</p>
-                        )}
-                        {projectEventsError && <p className="mt-1 text-xs text-red-300">{projectEventsError}</p>}
-                        {!isLoadingProjectEvents && !projectEventsError && filteredProjectEvents.length === 0 && (
-                          <p className="mt-1 text-xs text-muted-foreground">No project events yet.</p>
-                        )}
-                        <div className="mt-1 grid grid-cols-3 gap-2 text-xs">
-                          <div className="rounded border border-border/60 bg-background/60 p-1.5">
-                            <p className="text-muted-foreground">Failures</p>
-                            <p className="font-semibold">{projectFailureStats.totalFailures}</p>
-                          </div>
-                          <div className="rounded border border-border/60 bg-background/60 p-1.5">
-                            <p className="text-muted-foreground">Failures 24h</p>
-                            <p className="font-semibold">{projectFailureStats.failures24h}</p>
-                          </div>
-                          <div className="rounded border border-border/60 bg-background/60 p-1.5">
-                            <p className="text-muted-foreground">Affected Tasks</p>
-                            <p className="font-semibold">{projectFailureStats.affectedTasks}</p>
-                          </div>
-                        </div>
-                        {filteredProjectEvents.length > 0 && (
-                          <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
-                            {filteredProjectEvents.map((event) => (
-                              <div key={event.id} className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
-                                <p className="font-medium text-foreground/90">
-                                  T#{event.task_id} · {event.event_type}
-                                </p>
-                                <p className="text-muted-foreground">
-                                  {event.actor_type}:{event.actor_id} · {formatEventTime(event.created_at)}
-                                </p>
-                                <p className="truncate text-muted-foreground">{formatPayload(event.payload ?? {})}</p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="mt-3 rounded-md border bg-background/40 p-2">
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Agent Test Controls</p>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <Input
-                      placeholder="agent id"
-                      value={agentIDDraft}
-                      onChange={(e) => setAgentIDDraft(e.target.value)}
-                      disabled={isAgentActionRunning}
-                    />
-                    <Input
-                      type="number"
-                      min={1}
-                      placeholder="lease seconds"
-                      value={leaseSecondsDraft}
-                      onChange={(e) => setLeaseSecondsDraft(e.target.value)}
-                      disabled={isAgentActionRunning}
-                    />
-                    <Input
-                      className="col-span-2"
-                      placeholder="agent capabilities (comma separated)"
-                      value={agentCapabilitiesDraft}
-                      onChange={(e) => setAgentCapabilitiesDraft(e.target.value)}
-                      disabled={isAgentActionRunning}
-                    />
-                    <Input
-                      className="col-span-2"
-                      placeholder="claim token"
-                      value={claimTokenDraft}
-                      onChange={(e) => setClaimTokenDraft(e.target.value)}
-                      disabled={isAgentActionRunning}
-                    />
-                    <Input
-                      className="col-span-2"
-                      placeholder="fail reason (optional)"
-                      value={failReasonDraft}
-                      onChange={(e) => setFailReasonDraft(e.target.value)}
-                      disabled={isAgentActionRunning}
-                    />
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Button size="sm" variant="outline" disabled={isAgentActionRunning} onClick={() => void claimNextTask()}>
-                      Claim Next
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={isAgentActionRunning || !selectedTask}
-                      onClick={() => void heartbeatClaim()}
-                    >
-                      Heartbeat
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={isAgentActionRunning || !selectedTask}
-                      onClick={() => void releaseClaim()}
-                    >
-                      Release
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={isAgentActionRunning || !selectedTask}
-                      onClick={() => void completeClaimedTask()}
-                    >
-                      Complete
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-red-300 hover:text-red-200"
-                      disabled={isAgentActionRunning || !selectedTask}
-                      onClick={() => void failClaimedTask()}
-                    >
-                      Fail
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
               <MarkdownEditor
                 label="Task Spec"
                 value={taskSpecDraft}
                 onChange={handleSpecDraftChange}
                 onSave={() => void saveTaskSpec()}
                 isSaving={isSavingSpec}
+                minHeightClassName="min-h-[240px]"
               />
 
               <MarkdownEditor
@@ -2385,7 +1984,448 @@ export function App() {
                 onChange={handleResultDraftChange}
                 onSave={() => void saveTaskResult()}
                 isSaving={isSavingResult}
+                minHeightClassName="min-h-[240px]"
               />
+
+              <div className="rounded-md border bg-muted/20">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-3 text-left"
+                  onClick={() => setIsExecutionOpen((prev) => !prev)}
+                >
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Execution</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Policy, capabilities, runtime alerts, events, and agent controls
+                    </p>
+                  </div>
+                  {isExecutionOpen ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </button>
+
+                {isExecutionOpen && (
+                  <div className="border-t border-border/70 p-3">
+                    <div className="flex items-end gap-2">
+                      <div className="w-28">
+                        <p className="mb-1 text-[11px] text-muted-foreground">Max attempts</p>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={maxAttemptsDraft}
+                          onChange={(e) => setMaxAttemptsDraft(e.target.value)}
+                          className="h-9"
+                        />
+                      </div>
+                      <Button size="sm" variant="outline" disabled={isSavingExecutionPolicy} onClick={() => void saveExecutionPolicy()}>
+                        {isSavingExecutionPolicy ? 'Saving...' : 'Save policy'}
+                      </Button>
+                    </div>
+
+                    <div className="mt-3">
+                      <p className="mb-1 text-[11px] text-muted-foreground">Required capabilities (comma separated)</p>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          placeholder="go, backend, tests"
+                          value={requiredCapabilitiesDraft}
+                          onChange={(e) => setRequiredCapabilitiesDraft(e.target.value)}
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="shrink-0 whitespace-nowrap"
+                          disabled={isSavingCapabilities}
+                          onClick={() => void saveTaskCapabilities()}
+                        >
+                          {isSavingCapabilities ? 'Saving...' : 'Save capabilities'}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <form className="mt-3 space-y-2" onSubmit={saveGitLink}>
+                      <p className="text-[11px] text-muted-foreground">Link Git result</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input
+                          placeholder="repo"
+                          value={gitRepoDraft}
+                          onChange={(e) => setGitRepoDraft(e.target.value)}
+                          disabled={isSavingGitLink}
+                        />
+                        <Input
+                          placeholder="branch"
+                          value={gitBranchDraft}
+                          onChange={(e) => setGitBranchDraft(e.target.value)}
+                          disabled={isSavingGitLink}
+                        />
+                        <Input
+                          placeholder="base commit"
+                          value={gitBaseCommitDraft}
+                          onChange={(e) => setGitBaseCommitDraft(e.target.value)}
+                          disabled={isSavingGitLink}
+                        />
+                        <Input
+                          placeholder="commit sha"
+                          value={gitCommitDraft}
+                          onChange={(e) => setGitCommitDraft(e.target.value)}
+                          disabled={isSavingGitLink}
+                        />
+                      </div>
+                      <div className="flex justify-end">
+                        <Button type="submit" size="sm" variant="outline" disabled={isSavingGitLink}>
+                          {isSavingGitLink ? 'Linking...' : 'Add Git Link'}
+                        </Button>
+                      </div>
+                    </form>
+
+                    {isLoadingTaskContext && <p className="mt-3 text-xs text-muted-foreground">Loading execution context...</p>}
+                    {taskContextError && <p className="mt-3 text-xs text-red-300">{taskContextError}</p>}
+
+                    {taskContext && (
+                      <div className="mt-3 grid gap-3">
+                        <div className="rounded-md border bg-background/40 p-2">
+                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Observability Filters</p>
+                          <div className="mt-2 grid grid-cols-2 gap-2">
+                            <Input
+                              placeholder="event type (e.g. task.failed)"
+                              value={eventTypeFilter}
+                              onChange={(e) => setEventTypeFilter(e.target.value)}
+                            />
+                            <Input
+                              placeholder="actor (type:id)"
+                              value={eventActorFilter}
+                              onChange={(e) => setEventActorFilter(e.target.value)}
+                            />
+                            <Input
+                              type="datetime-local"
+                              value={eventFromDraft}
+                              onChange={(e) => setEventFromDraft(e.target.value)}
+                            />
+                            <Input
+                              type="datetime-local"
+                              value={eventToDraft}
+                              onChange={(e) => setEventToDraft(e.target.value)}
+                            />
+                            <Input
+                              placeholder="run agent filter"
+                              value={runAgentFilter}
+                              onChange={(e) => setRunAgentFilter(e.target.value)}
+                            />
+                            <select
+                              className="h-10 rounded-md border border-border bg-background px-2 text-sm"
+                              value={runStatusFilter}
+                              onChange={(e) =>
+                                setRunStatusFilter(
+                                  e.target.value as 'all' | 'running' | 'completed' | 'failed' | 'released'
+                                )
+                              }
+                            >
+                              <option value="all">All run statuses</option>
+                              <option value="running">running</option>
+                              <option value="completed">completed</option>
+                              <option value="failed">failed</option>
+                              <option value="released">released</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="rounded-md border bg-background/40 p-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Runtime Alerts</p>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                className="h-8 w-28"
+                                type="number"
+                                min={1}
+                                placeholder="stale sec"
+                                value={heartbeatAlertThresholdDraft}
+                                onChange={(e) => setHeartbeatAlertThresholdDraft(e.target.value)}
+                              />
+                              <Button size="sm" variant="outline" onClick={() => void refreshRuntimeAlerts()} disabled={isLoadingRuntimeAlerts}>
+                                {isLoadingRuntimeAlerts ? 'Refreshing...' : 'Refresh'}
+                              </Button>
+                            </div>
+                          </div>
+                          {runtimeAlertsError && <p className="mt-2 text-xs text-red-300">{runtimeAlertsError}</p>}
+                          {!runtimeAlertsError && !runtimeAlerts && isLoadingRuntimeAlerts && (
+                            <p className="mt-2 text-xs text-muted-foreground">Loading runtime alerts...</p>
+                          )}
+                          {runtimeAlerts && (
+                            <div className="mt-2 space-y-2">
+                              <div className="grid grid-cols-2 gap-2 text-xs xl:grid-cols-4">
+                                <div className="rounded border border-border/60 bg-background/60 p-1.5">
+                                  <p className="text-muted-foreground">Queue</p>
+                                  <p className="font-semibold">
+                                    {runtimeAlerts.done_tasks}/{runtimeAlerts.total_tasks} done
+                                  </p>
+                                  <p className="text-[11px] text-muted-foreground">
+                                    {runtimeAlerts.claimable_tasks} claimable · {runtimeAlerts.blocked_planned_tasks} blocked
+                                  </p>
+                                </div>
+                                <div className="rounded border border-border/60 bg-background/60 p-1.5">
+                                  <p className="text-muted-foreground">Stale Claims</p>
+                                  <p className="font-semibold">{runtimeAlerts.stale_active_claims.length}</p>
+                                </div>
+                                <div className="rounded border border-border/60 bg-background/60 p-1.5">
+                                  <p className="text-muted-foreground">Heartbeat Overdue</p>
+                                  <p className="font-semibold">{runtimeAlerts.heartbeat_overdue_claims.length}</p>
+                                </div>
+                                <div className="rounded border border-border/60 bg-background/60 p-1.5">
+                                  <p className="text-muted-foreground">Orphan In Progress</p>
+                                  <p className="font-semibold">{runtimeAlerts.orphan_in_progress_tasks.length}</p>
+                                </div>
+                                <div className="rounded border border-border/60 bg-background/60 p-1.5">
+                                  <p className="text-muted-foreground">Exhausted Tasks</p>
+                                  <p className="font-semibold">{runtimeAlerts.exhausted_tasks.length}</p>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 gap-2 xl:grid-cols-4">
+                                <div className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
+                                  <p className="mb-1 font-medium text-foreground/90">Stale Claims</p>
+                                  <div className="max-h-24 space-y-1 overflow-y-auto">
+                                    {runtimeAlerts.stale_active_claims.length === 0 && (
+                                      <p className="text-muted-foreground">None</p>
+                                    )}
+                                    {runtimeAlerts.stale_active_claims.map((item) => (
+                                      <p key={item.claim_id} className="text-muted-foreground">
+                                        C#{item.claim_id} T#{item.task_id} {item.agent_id}
+                                      </p>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
+                                  <p className="mb-1 font-medium text-foreground/90">Heartbeat Overdue</p>
+                                  <div className="max-h-24 space-y-1 overflow-y-auto">
+                                    {runtimeAlerts.heartbeat_overdue_claims.length === 0 && (
+                                      <p className="text-muted-foreground">None</p>
+                                    )}
+                                    {runtimeAlerts.heartbeat_overdue_claims.map((item) => (
+                                      <p key={item.claim_id} className="text-muted-foreground">
+                                        C#{item.claim_id} T#{item.task_id} {item.seconds_since_heartbeat}s
+                                      </p>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
+                                  <p className="mb-1 font-medium text-foreground/90">Orphan In Progress</p>
+                                  <div className="max-h-24 space-y-1 overflow-y-auto">
+                                    {runtimeAlerts.orphan_in_progress_tasks.length === 0 && (
+                                      <p className="text-muted-foreground">None</p>
+                                    )}
+                                    {runtimeAlerts.orphan_in_progress_tasks.map((item) => (
+                                      <p key={item.task_id} className="text-muted-foreground">
+                                        T#{item.task_id}
+                                      </p>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
+                                  <p className="mb-1 font-medium text-foreground/90">Exhausted Tasks</p>
+                                  <div className="max-h-24 space-y-1 overflow-y-auto">
+                                    {runtimeAlerts.exhausted_tasks.length === 0 && (
+                                      <p className="text-muted-foreground">None</p>
+                                    )}
+                                    {runtimeAlerts.exhausted_tasks.map((item) => (
+                                      <p key={item.task_id} className="text-muted-foreground">
+                                        T#{item.task_id} {item.title} ({item.attempts_used}/{item.max_attempts})
+                                      </p>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Recent Runs</p>
+                          {filteredRuns.length === 0 && (
+                            <p className="mt-1 text-xs text-muted-foreground">No run history yet.</p>
+                          )}
+                          {filteredRuns.length > 0 && (
+                            <div className="mt-1 max-h-32 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
+                              {filteredRuns.map((run) => (
+                                <div key={run.id} className="flex items-center justify-between text-xs">
+                                  <span className="truncate text-muted-foreground">
+                                    #{run.attempt_no} {run.agent_id}
+                                  </span>
+                                  <span className="uppercase text-foreground/85">{run.status}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Git Refs</p>
+                          {taskContext.git_refs.length === 0 && (
+                            <p className="mt-1 text-xs text-muted-foreground">No git refs linked yet.</p>
+                          )}
+                          {taskContext.git_refs.length > 0 && (
+                            <div className="mt-1 max-h-32 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
+                              {taskContext.git_refs.map((ref) => (
+                                <div key={ref.id} className="text-xs">
+                                  <p className="truncate text-foreground/90">
+                                    {ref.repo} · {ref.branch}
+                                  </p>
+                                  <p className="truncate text-muted-foreground">
+                                    {ref.base_commit.slice(0, 12)} → {ref.commit_sha.slice(0, 12)}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Task Events</p>
+                            {isLoadingTaskEvents && <p className="mt-1 text-xs text-muted-foreground">Loading task events...</p>}
+                            {taskEventsError && <p className="mt-1 text-xs text-red-300">{taskEventsError}</p>}
+                            {!isLoadingTaskEvents && !taskEventsError && filteredTaskEvents.length === 0 && (
+                              <p className="mt-1 text-xs text-muted-foreground">No task events yet.</p>
+                            )}
+                            {filteredTaskEvents.length > 0 && (
+                              <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
+                                {filteredTaskEvents.map((event) => (
+                                  <div key={event.id} className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
+                                    <p className="font-medium text-foreground/90">{event.event_type}</p>
+                                    <p className="text-muted-foreground">
+                                      {event.actor_type}:{event.actor_id} · {formatEventTime(event.created_at)}
+                                    </p>
+                                    <p className="truncate text-muted-foreground">{formatPayload(event.payload ?? {})}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Project Events</p>
+                            {isLoadingProjectEvents && (
+                              <p className="mt-1 text-xs text-muted-foreground">Loading project events...</p>
+                            )}
+                            {projectEventsError && <p className="mt-1 text-xs text-red-300">{projectEventsError}</p>}
+                            {!isLoadingProjectEvents && !projectEventsError && filteredProjectEvents.length === 0 && (
+                              <p className="mt-1 text-xs text-muted-foreground">No project events yet.</p>
+                            )}
+                            <div className="mt-1 grid grid-cols-3 gap-2 text-xs">
+                              <div className="rounded border border-border/60 bg-background/60 p-1.5">
+                                <p className="text-muted-foreground">Failures</p>
+                                <p className="font-semibold">{projectFailureStats.totalFailures}</p>
+                              </div>
+                              <div className="rounded border border-border/60 bg-background/60 p-1.5">
+                                <p className="text-muted-foreground">Failures 24h</p>
+                                <p className="font-semibold">{projectFailureStats.failures24h}</p>
+                              </div>
+                              <div className="rounded border border-border/60 bg-background/60 p-1.5">
+                                <p className="text-muted-foreground">Affected Tasks</p>
+                                <p className="font-semibold">{projectFailureStats.affectedTasks}</p>
+                              </div>
+                            </div>
+                            {filteredProjectEvents.length > 0 && (
+                              <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
+                                {filteredProjectEvents.map((event) => (
+                                  <div key={event.id} className="rounded border border-border/60 bg-background/60 p-1.5 text-xs">
+                                    <p className="font-medium text-foreground/90">
+                                      T#{event.task_id} · {event.event_type}
+                                    </p>
+                                    <p className="text-muted-foreground">
+                                      {event.actor_type}:{event.actor_id} · {formatEventTime(event.created_at)}
+                                    </p>
+                                    <p className="truncate text-muted-foreground">{formatPayload(event.payload ?? {})}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-3 rounded-md border bg-background/40 p-2">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Agent Test Controls</p>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <Input
+                          placeholder="agent id"
+                          value={agentIDDraft}
+                          onChange={(e) => setAgentIDDraft(e.target.value)}
+                          disabled={isAgentActionRunning}
+                        />
+                        <Input
+                          type="number"
+                          min={1}
+                          placeholder="lease seconds"
+                          value={leaseSecondsDraft}
+                          onChange={(e) => setLeaseSecondsDraft(e.target.value)}
+                          disabled={isAgentActionRunning}
+                        />
+                        <Input
+                          className="col-span-2"
+                          placeholder="agent capabilities (comma separated)"
+                          value={agentCapabilitiesDraft}
+                          onChange={(e) => setAgentCapabilitiesDraft(e.target.value)}
+                          disabled={isAgentActionRunning}
+                        />
+                        <Input
+                          className="col-span-2"
+                          placeholder="claim token"
+                          value={claimTokenDraft}
+                          onChange={(e) => setClaimTokenDraft(e.target.value)}
+                          disabled={isAgentActionRunning}
+                        />
+                        <Input
+                          className="col-span-2"
+                          placeholder="fail reason (optional)"
+                          value={failReasonDraft}
+                          onChange={(e) => setFailReasonDraft(e.target.value)}
+                          disabled={isAgentActionRunning}
+                        />
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Button size="sm" variant="outline" disabled={isAgentActionRunning} onClick={() => void claimNextTask()}>
+                          Claim Next
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={isAgentActionRunning || !selectedTask}
+                          onClick={() => void heartbeatClaim()}
+                        >
+                          Heartbeat
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={isAgentActionRunning || !selectedTask}
+                          onClick={() => void releaseClaim()}
+                        >
+                          Release
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={isAgentActionRunning || !selectedTask}
+                          onClick={() => void completeClaimedTask()}
+                        >
+                          Complete
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-red-300 hover:text-red-200"
+                          disabled={isAgentActionRunning || !selectedTask}
+                          onClick={() => void failClaimedTask()}
+                        >
+                          Fail
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </CardContent>

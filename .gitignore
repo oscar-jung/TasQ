@@ -3,6 +3,7 @@ node_modules
 /dist
 /tasq-app/dist/
 /bin
+demos/
 tasq-mcp/server
 tasq-backend/.gocache/
 tasq-backend/.gopath/

@@ -6,13 +6,15 @@ export function MarkdownEditor({
   value,
   onChange,
   onSave,
-  isSaving
+  isSaving,
+  minHeightClassName = 'min-h-[140px]'
 }: {
   label: string
   value: string
   onChange: (next: string) => void
   onSave: () => void
   isSaving: boolean
+  minHeightClassName?: string
 }) {
   const [mode, setMode] = useState<'write' | 'preview'>('write')
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -77,14 +79,14 @@ export function MarkdownEditor({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder="Write markdown..."
-            className="h-full min-h-[140px] flex-1 resize-none bg-transparent p-3 text-sm outline-none"
+            className={`h-full flex-1 resize-none bg-transparent p-3 text-sm outline-none ${minHeightClassName}`}
           />
         </div>
       )}
 
       {mode === 'preview' && (
         <div
-          className="markdown-preview min-h-[140px] flex-1 overflow-auto p-3 text-sm"
+          className={`markdown-preview flex-1 overflow-auto p-3 text-sm ${minHeightClassName}`}
           dangerouslySetInnerHTML={{ __html: toMarkdownHTML(value) }}
         />
       )}
