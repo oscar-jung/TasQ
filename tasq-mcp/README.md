@@ -1,20 +1,23 @@
-# tasq-mcp (Phase 1)
+# tasq-mcp (Phase 2)
 
-Minimal MCP stdio server skeleton for TasQ integration.
+MCP stdio server for TasQ runtime integration.
 
 ## Current status
 - MCP transport (stdio, `Content-Length` framing)
 - `initialize`
 - `tools/list`
-- `tools/call` with one no-op tool:
+- `tools/call` tools:
   - `tasq_ping`
+  - `tasq_claim_next`
+  - `tasq_get_task_context`
+  - `tasq_runtime_alerts`
 
-This is the Phase 1 checkpoint. Runtime tools are added in later phases.
+Phase 2 provides core read/claim runtime API access.
 
 ## Environment
 - `TASQ_API_BASE` (default: `http://localhost:8080`)
-- `TASQ_TOKEN_AGENT` (optional in Phase 1)
-- `TASQ_TOKEN_ADMIN` (optional in Phase 1)
+- `TASQ_TOKEN_AGENT` (used by claim/context tools)
+- `TASQ_TOKEN_ADMIN` (fallback for admin-level reads such as runtime alerts)
 
 ## Run
 ```bash
@@ -23,4 +26,3 @@ go run ./cmd/server
 ```
 
 Logs are written to stderr.
-

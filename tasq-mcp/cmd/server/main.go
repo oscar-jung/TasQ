@@ -4,9 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -36,6 +39,31 @@ type config struct {
 	APIBase    string
 	AgentToken string
 	AdminToken string
+}
+
+type claimNextArgs struct {
+	ProjectID    int64    `json:"project_id"`
+	AgentID      string   `json:"agent_id"`
+	LeaseSeconds int64    `json:"lease_seconds,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
+}
+
+type getTaskContextArgs struct {
+	TaskID int64 `json:"task_id"`
+}
+
+type runtimeAlertsArgs struct {
+	ProjectID            int64 `json:"project_id"`
+	HeartbeatStaleSecond int64 `json:"heartbeat_stale_seconds,omitempty"`
+}
+
+type httpCallError struct {
+	Status int
+	Body   string
+}
+
+func (e *httpCallError) Error() string {
+	return fmt.Sprintf("tasq api status=%d body=%s", e.Status, e.Body)
 }
 
 func main() {
@@ -128,6 +156,46 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 							"properties": map[string]any{},
 						},
 					},
+					{
+						"name":        "tasq_claim_next",
+						"description": "Claim next executable task for an agent.",
+						"inputSchema": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"project_id":    map[string]any{"type": "integer"},
+								"agent_id":      map[string]any{"type": "string"},
+								"lease_seconds": map[string]any{"type": "integer"},
+								"capabilities": map[string]any{
+									"type":  "array",
+									"items": map[string]any{"type": "string"},
+								},
+							},
+							"required": []string{"project_id", "agent_id"},
+						},
+					},
+					{
+						"name":        "tasq_get_task_context",
+						"description": "Fetch task context payload for execution.",
+						"inputSchema": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"task_id": map[string]any{"type": "integer"},
+							},
+							"required": []string{"task_id"},
+						},
+					},
+					{
+						"name":        "tasq_runtime_alerts",
+						"description": "Read runtime alert report for a project.",
+						"inputSchema": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"project_id":              map[string]any{"type": "integer"},
+								"heartbeat_stale_seconds": map[string]any{"type": "integer"},
+							},
+							"required": []string{"project_id"},
+						},
+					},
 				},
 			},
 		}
@@ -154,6 +222,53 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 					},
 				},
 			}
+		case "tasq_claim_next":
+			var args claimNextArgs
+			if err := decodeArgs(payload.Arguments, &args); err != nil {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: err.Error()}}
+			}
+			if args.ProjectID == 0 || strings.TrimSpace(args.AgentID) == "" {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: "project_id and agent_id are required"}}
+			}
+			resBody, err := tasqJSON(cfg, http.MethodPost, "/agents/claim-next", args, cfg.AgentToken)
+			if err != nil {
+				return toolError(err)
+			}
+			return toolResult(resBody)
+		case "tasq_get_task_context":
+			var args getTaskContextArgs
+			if err := decodeArgs(payload.Arguments, &args); err != nil {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: err.Error()}}
+			}
+			if args.TaskID == 0 {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: "task_id is required"}}
+			}
+			resBody, err := tasqJSON(cfg, http.MethodGet, fmt.Sprintf("/tasks/%d/context", args.TaskID), nil, cfg.AgentToken)
+			if err != nil {
+				return toolError(err)
+			}
+			return toolResult(resBody)
+		case "tasq_runtime_alerts":
+			var args runtimeAlertsArgs
+			if err := decodeArgs(payload.Arguments, &args); err != nil {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: err.Error()}}
+			}
+			if args.ProjectID == 0 {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: "project_id is required"}}
+			}
+			urlPath := fmt.Sprintf("/projects/%d/runtime-alerts", args.ProjectID)
+			if args.HeartbeatStaleSecond > 0 {
+				urlPath = fmt.Sprintf("%s?heartbeat_stale_seconds=%d", urlPath, args.HeartbeatStaleSecond)
+			}
+			token := cfg.AgentToken
+			if token == "" {
+				token = cfg.AdminToken
+			}
+			resBody, err := tasqJSON(cfg, http.MethodGet, urlPath, nil, token)
+			if err != nil {
+				return toolError(err)
+			}
+			return toolResult(resBody)
 		default:
 			return rpcResponse{Error: &rpcError{Code: -32601, Message: "tool not found"}}
 		}
@@ -207,6 +322,102 @@ func writeResponse(w *bufio.Writer, resp rpcResponse) error {
 	return w.Flush()
 }
 
+func decodeArgs(arguments map[string]any, out any) error {
+	raw, err := json.Marshal(arguments)
+	if err != nil {
+		return fmt.Errorf("invalid arguments")
+	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("invalid arguments")
+	}
+	return nil
+}
+
+func tasqJSON(cfg config, method, route string, payload any, bearerToken string) (json.RawMessage, error) {
+	baseURL, err := url.Parse(strings.TrimSpace(cfg.APIBase))
+	if err != nil {
+		return nil, fmt.Errorf("invalid TASQ_API_BASE: %w", err)
+	}
+	if baseURL.Scheme == "" || baseURL.Host == "" {
+		return nil, fmt.Errorf("invalid TASQ_API_BASE: missing scheme or host")
+	}
+	routeURL, err := url.Parse(route)
+	if err != nil {
+		return nil, fmt.Errorf("invalid route: %w", err)
+	}
+	targetURL := baseURL.ResolveReference(routeURL)
+
+	var bodyReader io.Reader
+	if payload != nil {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		bodyReader = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, targetURL.String(), bodyReader)
+	if err != nil {
+		return nil, err
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if strings.TrimSpace(bearerToken) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearerToken))
+	}
+
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, &httpCallError{Status: resp.StatusCode, Body: strings.TrimSpace(string(body))}
+	}
+	if len(body) == 0 {
+		body = []byte(`{"ok":true}`)
+	}
+	return json.RawMessage(body), nil
+}
+
+func toolResult(body json.RawMessage) rpcResponse {
+	pretty := string(body)
+	var anyJSON any
+	if err := json.Unmarshal(body, &anyJSON); err == nil {
+		if b, err := json.MarshalIndent(anyJSON, "", "  "); err == nil {
+			pretty = string(b)
+		}
+	}
+	return rpcResponse{
+		Result: map[string]any{
+			"content": []map[string]any{
+				{"type": "text", "text": pretty},
+			},
+			"structuredContent": json.RawMessage(body),
+		},
+	}
+}
+
+func toolError(err error) rpcResponse {
+	var httpErr *httpCallError
+	if errors.As(err, &httpErr) {
+		return rpcResponse{Error: &rpcError{
+			Code:    -32001,
+			Message: fmt.Sprintf("tasq api error (%d): %s", httpErr.Status, httpErr.Body),
+		}}
+	}
+	return rpcResponse{Error: &rpcError{
+		Code:    -32000,
+		Message: err.Error(),
+	}}
+}
+
 func getenv(key, fallback string) string {
 	v := strings.TrimSpace(os.Getenv(key))
 	if v == "" {
@@ -214,4 +425,3 @@ func getenv(key, fallback string) string {
 	}
 	return v
 }
-
