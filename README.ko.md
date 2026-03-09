@@ -293,8 +293,90 @@ PROJECT_ID=1 ACTION=fail ./scripts/agent_worker_demo.sh
 PROJECT_ID=1 ACTION=release ./scripts/agent_worker_demo.sh
 ```
 
+## 수동 플랜 데모 실행 방법
+planner가 구조만 만들고, 이후에는 사람이 웹 UI에서 직접 관리하고 싶을 때의 흐름이다.
+
+1. 서비스를 띄운다.
+```bash
+docker compose up -d
+curl -sS http://localhost:8080/healthz
+```
+2. Codex에 TasQ MCP가 등록되어 있는지 확인한다.
+```bash
+codex mcp list
+```
+`tasq-http`가 없다면:
+```bash
+codex mcp add tasq-http --url http://localhost:8091/mcp
+```
+3. 이 저장소에서 새 Codex 세션을 연다.
+```bash
+cd /Users/jung-yeon-woo/Development/Projects/tasq
+codex
+```
+4. [docs/demo_manual_plan_only.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_manual_plan_only.md)에 있는 planner 프롬프트를 그대로 붙여 넣는다.
+5. planner가 project를 만들고 numeric `project_id`를 출력할 때까지 기다린다.
+6. 웹 UI [http://localhost:5173](http://localhost:5173) 에서 생성된 project를 확인한다.
+7. 이후에는 웹 UI에서 직접 관리한다.
+   - task spec/result 수정
+   - task status 변경
+   - 필요 시 rerun/invalidate 사용
+
+기대 동작:
+- project는 `execution_mode="manual"` 상태를 유지한다
+- project는 `plan_state="approved"` 상태를 유지한다
+- worker claim과 spawner 실행은 막힌다
+
 ## 수동 플랜 데모
 worker 없이 planner가 만든 구조만 쓰고 싶다면 [docs/demo_manual_plan_only.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_manual_plan_only.md)를 참고해.
+
+## 에이전트 + Git 데모 실행 방법
+planner가 project와 tree를 만들고, 승인 후 worker가 실제 코드 작업까지 수행하는 흐름이다.
+
+1. 서비스를 띄운다.
+```bash
+docker compose up -d
+curl -sS http://localhost:8080/healthz
+```
+2. Codex에 TasQ MCP가 등록되어 있는지 확인한다.
+```bash
+codex mcp list
+```
+`tasq-http`가 없다면:
+```bash
+codex mcp add tasq-http --url http://localhost:8091/mcp
+```
+3. 대상 workspace에서 새 planner 세션을 연다.
+```bash
+cd /absolute/path/to/your/workspace
+codex
+```
+4. [docs/demo_agent_git_execution.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_agent_git_execution.md)의 planner 프롬프트를 그대로 붙여 넣는다.
+5. planner가 다음을 끝낼 때까지 기다린다.
+   - project 생성
+   - numeric `project_id` 출력
+   - `workers.json` 생성
+6. 웹 UI [http://localhost:5173](http://localhost:5173) 에서 project를 검토하고 승인한다.
+   - `git_policy="required"` 유지
+   - `execution_mode`는 `agent_assisted` 또는 `agent_autonomous`
+   - `plan_state`를 `draft`에서 `approved`로 변경
+7. worker를 시작한다.
+```bash
+cd /Users/jung-yeon-woo/Development/Projects/tasq
+./scripts/spawn_workers.sh --spec-file /absolute/path/to/your/workspace/workers.json
+```
+8. 웹 UI에서 실행 상태를 관찰한다.
+   - task status
+   - interrupted runs
+   - checkpoints
+   - Git recovery summary
+9. upstream task를 다시 해야 하면 Task Detail에서 rerun/invalidate를 사용하고, Git은 branch-first로 다룬다.
+
+기대 동작:
+- 승인 전에는 spawner가 시작되지 않는다
+- Git required task는 편집 전에 `baseline`을 링크해야 한다
+- 성공한 코드 task는 `produced`를 남겨야 한다
+- rerun 흐름에서는 `rerun_branch`를 링크하는 것이 맞다
 
 ## 스모크/회귀 테스트
 ```bash

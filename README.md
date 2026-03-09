@@ -294,8 +294,91 @@ PROJECT_ID=1 ACTION=fail ./scripts/agent_worker_demo.sh
 PROJECT_ID=1 ACTION=release ./scripts/agent_worker_demo.sh
 ```
 
+## Run the manual planning demo
+Use this flow when you want planner-generated structure and human-only execution.
+
+1. Start the services.
+```bash
+docker compose up -d
+curl -sS http://localhost:8080/healthz
+```
+2. Ensure the TasQ MCP server is registered in Codex.
+```bash
+codex mcp list
+```
+If `tasq-http` is missing:
+```bash
+codex mcp add tasq-http --url http://localhost:8091/mcp
+```
+3. Open a fresh Codex session in this repository.
+```bash
+cd /Users/jung-yeon-woo/Development/Projects/tasq
+codex
+```
+4. Paste the planner prompt from [docs/demo_manual_plan_only.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_manual_plan_only.md).
+5. Wait for the planner to create the project and print the numeric `project_id`.
+6. Open the web UI at [http://localhost:5173](http://localhost:5173) and inspect the new project.
+7. Manage the plan manually in the UI:
+   - edit task specs and results
+   - update task statuses
+   - use rerun/invalidate only if you intentionally want to reset part of the plan
+
+Expected behavior:
+- the project should stay `execution_mode="manual"`
+- the project should stay `plan_state="approved"`
+- worker claims and the spawner are intentionally blocked
+
 ## Manual planning demo
 If you want planner-generated structure without worker execution, use [docs/demo_manual_plan_only.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_manual_plan_only.md).
+
+## Run the agent + Git demo
+Use this flow when you want TasQ to manage both planning and agent execution for a code project.
+
+1. Start the services.
+```bash
+docker compose up -d
+curl -sS http://localhost:8080/healthz
+```
+2. Ensure the TasQ MCP server is registered in Codex.
+```bash
+codex mcp list
+```
+If `tasq-http` is missing:
+```bash
+codex mcp add tasq-http --url http://localhost:8091/mcp
+```
+3. Open a fresh planner session in the target workspace.
+```bash
+cd /absolute/path/to/your/workspace
+codex
+```
+4. Paste the planner prompt from [docs/demo_agent_git_execution.md](/Users/jung-yeon-woo/Development/Projects/tasq/docs/demo_agent_git_execution.md).
+5. Wait for the planner to:
+   - create the project
+   - print the numeric `project_id`
+   - create `workers.json`
+6. Open the web UI at [http://localhost:5173](http://localhost:5173).
+7. Review the generated project and then approve it:
+   - keep `git_policy="required"`
+   - keep `execution_mode` in `agent_assisted` or `agent_autonomous`
+   - change `plan_state` from `draft` to `approved`
+8. Start workers.
+```bash
+cd /Users/jung-yeon-woo/Development/Projects/tasq
+./scripts/spawn_workers.sh --spec-file /absolute/path/to/your/workspace/workers.json
+```
+9. Observe execution in the web UI:
+   - task status updates
+   - interrupted runs
+   - checkpoints
+   - Git recovery summary
+10. If an upstream task changes, use rerun/invalidate controls in Task Detail and prefer branch-first recovery.
+
+Expected behavior:
+- the spawner refuses to start before approval
+- code tasks with required Git policy must link `baseline` before editing
+- successful code tasks should link `produced`
+- rerun flows should link `rerun_branch`
 
 ## Smoke and regression tests
 ```bash
