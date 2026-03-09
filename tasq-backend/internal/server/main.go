@@ -30,6 +30,7 @@ type task struct {
 	SpecMD       string     `json:"spec_md"`
 	ResultMD     string     `json:"result_md"`
 	Status       string     `json:"status"`
+	MaxAttempts  int        `json:"max_attempts"`
 	DisplayOrder int64      `json:"display_order"`
 	CreatedAt    time.Time  `json:"created_at"`
 	StartedAt    *time.Time `json:"started_at"`
@@ -61,6 +62,7 @@ type createTaskReq struct {
 	ParentTaskID *int64 `json:"parent_task_id"`
 	Title        string `json:"title"`
 	SpecMD       string `json:"spec_md"`
+	MaxAttempts  *int   `json:"max_attempts"`
 }
 
 type addDependencyReq struct {
@@ -112,6 +114,10 @@ type reorderTasksReq struct {
 
 type deleteTaskReq struct {
 	Strategy string `json:"strategy"`
+}
+
+type updateTaskExecutionPolicyReq struct {
+	MaxAttempts int `json:"max_attempts"`
 }
 
 type contextDependency struct {
@@ -308,6 +314,11 @@ func (s *server) tasksSubrouter(w http.ResponseWriter, r *http.Request) {
 	case "delete":
 		if r.Method == http.MethodPost {
 			s.deleteTask(w, r, taskID)
+			return
+		}
+	case "execution-policy":
+		if r.Method == http.MethodPatch {
+			s.updateTaskExecutionPolicy(w, r, taskID)
 			return
 		}
 	}

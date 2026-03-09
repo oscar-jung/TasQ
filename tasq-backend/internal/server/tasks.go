@@ -23,6 +23,10 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, projectID in
 		http.Error(w, "title is required", http.StatusBadRequest)
 		return
 	}
+	if req.MaxAttempts != nil && *req.MaxAttempts < 1 {
+		http.Error(w, "max_attempts must be >= 1", http.StatusBadRequest)
+		return
+	}
 
 	tx, err := s.db.BeginTx(r.Context(), nil)
 	if err != nil {
@@ -49,16 +53,16 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, projectID in
 
 	var t task
 	err = tx.QueryRowContext(r.Context(), `
-		INSERT INTO tasks(project_id, parent_task_id, title, spec_md, status, display_order)
-		VALUES ($1, $2, $3, $4, 'planned', COALESCE((
+		INSERT INTO tasks(project_id, parent_task_id, title, spec_md, status, max_attempts, display_order)
+		VALUES ($1, $2, $3, $4, 'planned', COALESCE($5, 5), COALESCE((
 			SELECT MAX(display_order) + 1024
 			FROM tasks
 			WHERE project_id = $1
 			  AND parent_task_id IS NOT DISTINCT FROM $2
 		), 1024))
-		RETURNING id, project_id, parent_task_id, title, spec_md, result_md, status, display_order, created_at, started_at, done_at`,
-		projectID, req.ParentTaskID, req.Title, req.SpecMD,
-	).Scan(&t.ID, &t.ProjectID, &t.ParentID, &t.Title, &t.SpecMD, &t.ResultMD, &t.Status, &t.DisplayOrder, &t.CreatedAt, &t.StartedAt, &t.DoneAt)
+		RETURNING id, project_id, parent_task_id, title, spec_md, result_md, status, max_attempts, display_order, created_at, started_at, done_at`,
+		projectID, req.ParentTaskID, req.Title, req.SpecMD, req.MaxAttempts,
+	).Scan(&t.ID, &t.ProjectID, &t.ParentID, &t.Title, &t.SpecMD, &t.ResultMD, &t.Status, &t.MaxAttempts, &t.DisplayOrder, &t.CreatedAt, &t.StartedAt, &t.DoneAt)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -247,7 +251,7 @@ func (s *server) updateTaskStatus(w http.ResponseWriter, r *http.Request, taskID
 	}
 
 	status := strings.TrimSpace(req.Status)
-	if status != "planned" && status != "in_progress" && status != "done" {
+	if status != "planned" && status != "in_progress" && status != "done" && status != "failed" {
 		http.Error(w, "invalid status", http.StatusBadRequest)
 		return
 	}
@@ -312,6 +316,36 @@ func (s *server) updateTaskStatus(w http.ResponseWriter, r *http.Request, taskID
 	if pidErr == nil {
 		s.maybeRunTreeGuard(r.Context(), projectID)
 	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// updateTaskExecutionPolicy handles PATCH /tasks/:task_id/execution-policy.
+func (s *server) updateTaskExecutionPolicy(w http.ResponseWriter, r *http.Request, taskID int64) {
+	var req updateTaskExecutionPolicyReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if req.MaxAttempts < 1 {
+		http.Error(w, "max_attempts must be >= 1", http.StatusBadRequest)
+		return
+	}
+
+	res, err := s.db.ExecContext(r.Context(), `
+		UPDATE tasks
+		SET max_attempts = $2,
+			updated_at = NOW()
+		WHERE id = $1`, taskID, req.MaxAttempts)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "task not found", http.StatusNotFound)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

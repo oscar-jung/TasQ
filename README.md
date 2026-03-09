@@ -39,6 +39,7 @@ docker compose up --build
 - `PATCH /tasks/:id/content`
 - `POST /tasks/:id/delete`
 - `PATCH /tasks/:id/status`
+- `PATCH /tasks/:id/execution-policy`
 - `POST /agents/claim-next`
 - `POST /tasks/:id/heartbeat`
 - `POST /tasks/:id/release`

@@ -26,7 +26,7 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.LeaseSeconds <= 0 {
-		req.LeaseSeconds = 300
+		req.LeaseSeconds = 120
 	}
 
 	tx, err := s.db.BeginTx(r.Context(), nil)
@@ -38,16 +38,30 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 
 	var t task
 	err = tx.QueryRowContext(r.Context(), `
-		SELECT t.id, t.project_id, t.parent_task_id, t.title, t.spec_md, t.result_md, t.status, t.display_order, t.created_at, t.started_at, t.done_at
+		SELECT t.id, t.project_id, t.parent_task_id, t.title, t.spec_md, t.result_md, t.status, t.max_attempts, t.display_order, t.created_at, t.started_at, t.done_at
 		FROM tasks t
 		WHERE t.project_id = $1
 		  AND t.status = 'planned'
+		  AND (
+			t.parent_task_id IS NULL
+			OR EXISTS (
+				SELECT 1
+				FROM tasks parent
+				WHERE parent.id = t.parent_task_id
+				  AND parent.status = 'done'
+			)
+		  )
 		  AND NOT EXISTS (
 			SELECT 1 FROM task_claims c
 			WHERE c.task_id = t.id
 			  AND c.status = 'active'
 			  AND c.lease_until > NOW()
 		  )
+		  AND (
+			SELECT COUNT(1)
+			FROM task_claims c
+			WHERE c.task_id = t.id
+		) < t.max_attempts
 		  AND NOT EXISTS (
 			SELECT 1
 			FROM task_dependencies td
@@ -58,7 +72,7 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 		ORDER BY t.display_order ASC, t.created_at ASC
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED`, req.ProjectID).
-		Scan(&t.ID, &t.ProjectID, &t.ParentID, &t.Title, &t.SpecMD, &t.ResultMD, &t.Status, &t.DisplayOrder, &t.CreatedAt, &t.StartedAt, &t.DoneAt)
+		Scan(&t.ID, &t.ProjectID, &t.ParentID, &t.Title, &t.SpecMD, &t.ResultMD, &t.Status, &t.MaxAttempts, &t.DisplayOrder, &t.CreatedAt, &t.StartedAt, &t.DoneAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeJSON(w, http.StatusOK, map[string]any{"task": nil, "message": "no claimable task"})
 		return
@@ -69,8 +83,16 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err = tx.ExecContext(r.Context(), `
-		INSERT INTO task_claims(task_id, claimed_by_type, claimed_by_id, lease_until, status)
-		VALUES ($1, 'agent', $2, NOW() + ($3::text || ' seconds')::interval, 'active')`,
+		INSERT INTO task_claims(task_id, claimed_by_type, claimed_by_id, lease_until, heartbeat_at, attempt_no, status)
+		VALUES (
+			$1,
+			'agent',
+			$2,
+			NOW() + ($3::text || ' seconds')::interval,
+			NOW(),
+			COALESCE((SELECT MAX(attempt_no) + 1 FROM task_claims WHERE task_id = $1), 1),
+			'active'
+		)`,
 		t.ID, req.AgentID, req.LeaseSeconds)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -115,7 +137,7 @@ func (s *server) heartbeatTaskClaim(w http.ResponseWriter, r *http.Request, task
 		return
 	}
 	if req.LeaseSeconds <= 0 {
-		req.LeaseSeconds = 300
+		req.LeaseSeconds = 120
 	}
 
 	tx, err := s.db.BeginTx(r.Context(), nil)
@@ -137,7 +159,8 @@ func (s *server) heartbeatTaskClaim(w http.ResponseWriter, r *http.Request, task
 
 	_, err = tx.ExecContext(r.Context(), `
 		UPDATE task_claims
-		SET lease_until = NOW() + ($2::text || ' seconds')::interval
+		SET lease_until = NOW() + ($2::text || ' seconds')::interval,
+			heartbeat_at = NOW()
 		WHERE id = $1`, claimID, req.LeaseSeconds)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -338,10 +361,10 @@ func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID i
 	var ctxOut taskContext
 
 	err := s.db.QueryRowContext(r.Context(), `
-		SELECT id, project_id, parent_task_id, title, spec_md, result_md, status, display_order, created_at, started_at, done_at
+		SELECT id, project_id, parent_task_id, title, spec_md, result_md, status, max_attempts, display_order, created_at, started_at, done_at
 		FROM tasks
 		WHERE id = $1`, taskID).
-		Scan(&ctxOut.Task.ID, &ctxOut.Task.ProjectID, &ctxOut.Task.ParentID, &ctxOut.Task.Title, &ctxOut.Task.SpecMD, &ctxOut.Task.ResultMD, &ctxOut.Task.Status, &ctxOut.Task.DisplayOrder, &ctxOut.Task.CreatedAt, &ctxOut.Task.StartedAt, &ctxOut.Task.DoneAt)
+		Scan(&ctxOut.Task.ID, &ctxOut.Task.ProjectID, &ctxOut.Task.ParentID, &ctxOut.Task.Title, &ctxOut.Task.SpecMD, &ctxOut.Task.ResultMD, &ctxOut.Task.Status, &ctxOut.Task.MaxAttempts, &ctxOut.Task.DisplayOrder, &ctxOut.Task.CreatedAt, &ctxOut.Task.StartedAt, &ctxOut.Task.DoneAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "task not found", http.StatusNotFound)
 		return
@@ -373,15 +396,15 @@ func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID i
 
 	parentRows, err := s.db.QueryContext(r.Context(), `
 		WITH RECURSIVE ancestors AS (
-			SELECT t.id, t.project_id, t.parent_task_id, t.title, t.spec_md, t.result_md, t.status, t.display_order, t.created_at, t.started_at, t.done_at, 0 AS depth
+			SELECT t.id, t.project_id, t.parent_task_id, t.title, t.spec_md, t.result_md, t.status, t.max_attempts, t.display_order, t.created_at, t.started_at, t.done_at, 0 AS depth
 			FROM tasks t
 			WHERE t.id = (SELECT parent_task_id FROM tasks WHERE id = $1)
 			UNION ALL
-			SELECT p.id, p.project_id, p.parent_task_id, p.title, p.spec_md, p.result_md, p.status, p.display_order, p.created_at, p.started_at, p.done_at, a.depth + 1
+			SELECT p.id, p.project_id, p.parent_task_id, p.title, p.spec_md, p.result_md, p.status, p.max_attempts, p.display_order, p.created_at, p.started_at, p.done_at, a.depth + 1
 			FROM tasks p
 			JOIN ancestors a ON p.id = a.parent_task_id
 		)
-		SELECT id, project_id, parent_task_id, title, spec_md, result_md, status, display_order, created_at, started_at, done_at
+		SELECT id, project_id, parent_task_id, title, spec_md, result_md, status, max_attempts, display_order, created_at, started_at, done_at
 		FROM ancestors
 		ORDER BY depth DESC`, taskID)
 	if err != nil {
@@ -391,7 +414,7 @@ func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID i
 	defer parentRows.Close()
 	for parentRows.Next() {
 		var p task
-		if err := parentRows.Scan(&p.ID, &p.ProjectID, &p.ParentID, &p.Title, &p.SpecMD, &p.ResultMD, &p.Status, &p.DisplayOrder, &p.CreatedAt, &p.StartedAt, &p.DoneAt); err != nil {
+		if err := parentRows.Scan(&p.ID, &p.ProjectID, &p.ParentID, &p.Title, &p.SpecMD, &p.ResultMD, &p.Status, &p.MaxAttempts, &p.DisplayOrder, &p.CreatedAt, &p.StartedAt, &p.DoneAt); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

@@ -53,7 +53,11 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
 ## Task Content/Lifecycle
 - `PATCH /tasks/:task_id/status`
   - Handler: `(*server).updateTaskStatus` in `internal/server/tasks.go`
-  - Purpose: update status with dependency checks.
+  - Purpose: update status (`planned`, `in_progress`, `done`, `failed`) with dependency checks.
+
+- `PATCH /tasks/:task_id/execution-policy`
+  - Handler: `(*server).updateTaskExecutionPolicy` in `internal/server/tasks.go`
+  - Purpose: update task execution policy (`max_attempts`).
 
 - `PATCH /tasks/:task_id/content`
   - Handler: `(*server).updateTaskContent` in `internal/server/tasks.go`
@@ -96,3 +100,4 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
 - Tree guard mode is controlled by env `TREE_GUARD_MODE`:
   - `off` (default), `validate`, `cleanse`.
 - Topology writes use project advisory lock via `lockProjectTopology`.
+- Claim lease defaults to 120 seconds when omitted.

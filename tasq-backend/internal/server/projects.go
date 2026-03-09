@@ -112,7 +112,7 @@ func (s *server) getProjectTaskTree(w http.ResponseWriter, r *http.Request, proj
 // fetchProjectTasks loads all tasks in a project with stable ordering.
 func (s *server) fetchProjectTasks(ctx context.Context, projectID int64) ([]task, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, project_id, parent_task_id, title, spec_md, result_md, status, display_order, created_at, started_at, done_at
+		SELECT id, project_id, parent_task_id, title, spec_md, result_md, status, max_attempts, display_order, created_at, started_at, done_at
 		FROM tasks
 		WHERE project_id = $1
 		ORDER BY display_order ASC, created_at ASC`, projectID)
@@ -124,7 +124,7 @@ func (s *server) fetchProjectTasks(ctx context.Context, projectID int64) ([]task
 	out := make([]task, 0)
 	for rows.Next() {
 		var t task
-		if err := rows.Scan(&t.ID, &t.ProjectID, &t.ParentID, &t.Title, &t.SpecMD, &t.ResultMD, &t.Status, &t.DisplayOrder, &t.CreatedAt, &t.StartedAt, &t.DoneAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.ProjectID, &t.ParentID, &t.Title, &t.SpecMD, &t.ResultMD, &t.Status, &t.MaxAttempts, &t.DisplayOrder, &t.CreatedAt, &t.StartedAt, &t.DoneAt); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
