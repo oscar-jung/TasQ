@@ -29,6 +29,7 @@
 ## Agent integration contract
 - `docs/agent_contract.md`
 - Demo worker script: `../scripts/agent_worker_demo.sh`
+- Operations playbook: `docs/operations.md`
 
 ## Notes
 - Tasks are ordered by `display_order ASC` (fallback `created_at ASC`) within a project/parent.

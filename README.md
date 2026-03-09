@@ -53,6 +53,7 @@ docker compose up --build
 ./scripts/claim_concurrency_smoke.sh
 ./scripts/dependency_cycle_race_smoke.sh
 ./scripts/topology_move_reorder_smoke.sh
+./scripts/lease_reclaim_smoke.sh
 ```
 
 ## Agent runtime demo
@@ -63,6 +64,7 @@ PROJECT_ID=1 ACTION=release ./scripts/agent_worker_demo.sh
 ```
 
 - Agent API contract: `tasq-backend/docs/agent_contract.md`
+- Operations guide: `tasq-backend/docs/operations.md`
 
 ## Next implementation targets
 - Agent capability-based claim filters
