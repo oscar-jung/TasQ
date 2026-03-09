@@ -57,6 +57,50 @@ type runtimeAlertsArgs struct {
 	HeartbeatStaleSecond int64 `json:"heartbeat_stale_seconds,omitempty"`
 }
 
+type heartbeatArgs struct {
+	TaskID       int64  `json:"task_id"`
+	AgentID      string `json:"agent_id"`
+	ClaimToken   string `json:"claim_token"`
+	LeaseSeconds int64  `json:"lease_seconds,omitempty"`
+}
+
+type resultPayloadV2 struct {
+	Summary   string   `json:"summary"`
+	Changes   []string `json:"changes"`
+	Paths     []string `json:"paths"`
+	Commands  []string `json:"commands"`
+	Tests     []string `json:"tests"`
+	Artifacts []string `json:"artifacts"`
+	NextRisks []string `json:"next_risks"`
+}
+
+type completeTaskArgs struct {
+	TaskID               int64           `json:"task_id"`
+	AgentID              string          `json:"agent_id"`
+	ClaimToken           string          `json:"claim_token"`
+	ResultMD             string          `json:"result_md,omitempty"`
+	ResultPayloadVersion string          `json:"result_payload_version,omitempty"`
+	ResultPayload        resultPayloadV2 `json:"result_payload"`
+}
+
+type failTaskArgs struct {
+	TaskID               int64           `json:"task_id"`
+	AgentID              string          `json:"agent_id"`
+	ClaimToken           string          `json:"claim_token"`
+	Reason               string          `json:"reason"`
+	ResultMD             string          `json:"result_md,omitempty"`
+	ResultPayloadVersion string          `json:"result_payload_version,omitempty"`
+	ResultPayload        resultPayloadV2 `json:"result_payload"`
+}
+
+type linkGitRefArgs struct {
+	TaskID     int64  `json:"task_id"`
+	Repo       string `json:"repo,omitempty"`
+	Branch     string `json:"branch,omitempty"`
+	BaseCommit string `json:"base_commit,omitempty"`
+	CommitSHA  string `json:"commit_sha,omitempty"`
+}
+
 type httpCallError struct {
 	Status int
 	Body   string
@@ -157,6 +201,14 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 						},
 					},
 					{
+						"name":        "tasq_result_payload_template",
+						"description": "Return a v2 result_payload template for complete/fail calls.",
+						"inputSchema": map[string]any{
+							"type":       "object",
+							"properties": map[string]any{},
+						},
+					},
+					{
 						"name":        "tasq_claim_next",
 						"description": "Claim next executable task for an agent.",
 						"inputSchema": map[string]any{
@@ -196,6 +248,102 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 							"required": []string{"project_id"},
 						},
 					},
+					{
+						"name":        "tasq_heartbeat",
+						"description": "Extend an active task claim lease.",
+						"inputSchema": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"task_id":       map[string]any{"type": "integer"},
+								"agent_id":      map[string]any{"type": "string"},
+								"claim_token":   map[string]any{"type": "string"},
+								"lease_seconds": map[string]any{"type": "integer"},
+							},
+							"required": []string{"task_id", "agent_id", "claim_token"},
+						},
+					},
+					{
+						"name":        "tasq_complete_task",
+						"description": "Complete claimed task with v2 result payload.",
+						"inputSchema": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"task_id":     map[string]any{"type": "integer"},
+								"agent_id":    map[string]any{"type": "string"},
+								"claim_token": map[string]any{"type": "string"},
+								"result_md":   map[string]any{"type": "string"},
+								"result_payload_version": map[string]any{
+									"type": "string",
+									"enum": []string{"v2"},
+								},
+								"result_payload": map[string]any{
+									"type": "object",
+									"properties": map[string]any{
+										"summary":    map[string]any{"type": "string"},
+										"changes":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+										"paths":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+										"commands":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+										"tests":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+										"artifacts":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+										"next_risks": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+									},
+									"required": []string{
+										"summary", "changes", "paths", "commands", "tests", "artifacts", "next_risks",
+									},
+								},
+							},
+							"required": []string{"task_id", "agent_id", "claim_token", "result_payload"},
+						},
+					},
+					{
+						"name":        "tasq_fail_task",
+						"description": "Fail claimed task with reason and v2 result payload.",
+						"inputSchema": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"task_id":     map[string]any{"type": "integer"},
+								"agent_id":    map[string]any{"type": "string"},
+								"claim_token": map[string]any{"type": "string"},
+								"reason":      map[string]any{"type": "string"},
+								"result_md":   map[string]any{"type": "string"},
+								"result_payload_version": map[string]any{
+									"type": "string",
+									"enum": []string{"v2"},
+								},
+								"result_payload": map[string]any{
+									"type": "object",
+									"properties": map[string]any{
+										"summary":    map[string]any{"type": "string"},
+										"changes":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+										"paths":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+										"commands":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+										"tests":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+										"artifacts":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+										"next_risks": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+									},
+									"required": []string{
+										"summary", "changes", "paths", "commands", "tests", "artifacts", "next_risks",
+									},
+								},
+							},
+							"required": []string{"task_id", "agent_id", "claim_token", "reason", "result_payload"},
+						},
+					},
+					{
+						"name":        "tasq_link_git_ref",
+						"description": "Link git metadata to task history.",
+						"inputSchema": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"task_id":     map[string]any{"type": "integer"},
+								"repo":        map[string]any{"type": "string"},
+								"branch":      map[string]any{"type": "string"},
+								"base_commit": map[string]any{"type": "string"},
+								"commit_sha":  map[string]any{"type": "string"},
+							},
+							"required": []string{"task_id"},
+						},
+					},
 				},
 			},
 		}
@@ -222,6 +370,18 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 					},
 				},
 			}
+		case "tasq_result_payload_template":
+			template := resultPayloadV2{
+				Summary:   "What was completed and why.",
+				Changes:   []string{"Code changes made."},
+				Paths:     []string{"relative/path/to/file.go"},
+				Commands:  []string{"go test ./..."},
+				Tests:     []string{"unit:passed"},
+				Artifacts: []string{"binary-or-report-name"},
+				NextRisks: []string{"Open risk or follow-up"},
+			}
+			b, _ := json.Marshal(template)
+			return toolResult(b)
 		case "tasq_claim_next":
 			var args claimNextArgs
 			if err := decodeArgs(payload.Arguments, &args); err != nil {
@@ -265,6 +425,94 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 				token = cfg.AdminToken
 			}
 			resBody, err := tasqJSON(cfg, http.MethodGet, urlPath, nil, token)
+			if err != nil {
+				return toolError(err)
+			}
+			return toolResult(resBody)
+		case "tasq_heartbeat":
+			var args heartbeatArgs
+			if err := decodeArgs(payload.Arguments, &args); err != nil {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: err.Error()}}
+			}
+			if args.TaskID == 0 || strings.TrimSpace(args.AgentID) == "" || strings.TrimSpace(args.ClaimToken) == "" {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: "task_id, agent_id, and claim_token are required"}}
+			}
+			resBody, err := tasqJSON(cfg, http.MethodPost, fmt.Sprintf("/tasks/%d/heartbeat", args.TaskID), map[string]any{
+				"agent_id":      strings.TrimSpace(args.AgentID),
+				"claim_token":   strings.TrimSpace(args.ClaimToken),
+				"lease_seconds": args.LeaseSeconds,
+			}, cfg.AgentToken)
+			if err != nil {
+				return toolError(err)
+			}
+			return toolResult(resBody)
+		case "tasq_complete_task":
+			var args completeTaskArgs
+			if err := decodeArgs(payload.Arguments, &args); err != nil {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: err.Error()}}
+			}
+			if args.TaskID == 0 || strings.TrimSpace(args.AgentID) == "" || strings.TrimSpace(args.ClaimToken) == "" {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: "task_id, agent_id, and claim_token are required"}}
+			}
+			if err := validateResultPayloadV2(args.ResultPayload); err != nil {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: err.Error()}}
+			}
+			version := strings.TrimSpace(args.ResultPayloadVersion)
+			if version == "" {
+				version = "v2"
+			}
+			resBody, err := tasqJSON(cfg, http.MethodPost, fmt.Sprintf("/tasks/%d/complete", args.TaskID), map[string]any{
+				"agent_id":               strings.TrimSpace(args.AgentID),
+				"claim_token":            strings.TrimSpace(args.ClaimToken),
+				"result_md":              strings.TrimSpace(args.ResultMD),
+				"result_payload_version": version,
+				"result_payload":         args.ResultPayload,
+			}, cfg.AgentToken)
+			if err != nil {
+				return toolError(err)
+			}
+			return toolResult(resBody)
+		case "tasq_fail_task":
+			var args failTaskArgs
+			if err := decodeArgs(payload.Arguments, &args); err != nil {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: err.Error()}}
+			}
+			if args.TaskID == 0 || strings.TrimSpace(args.AgentID) == "" || strings.TrimSpace(args.ClaimToken) == "" || strings.TrimSpace(args.Reason) == "" {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: "task_id, agent_id, claim_token, and reason are required"}}
+			}
+			if err := validateResultPayloadV2(args.ResultPayload); err != nil {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: err.Error()}}
+			}
+			version := strings.TrimSpace(args.ResultPayloadVersion)
+			if version == "" {
+				version = "v2"
+			}
+			resBody, err := tasqJSON(cfg, http.MethodPost, fmt.Sprintf("/tasks/%d/fail", args.TaskID), map[string]any{
+				"agent_id":               strings.TrimSpace(args.AgentID),
+				"claim_token":            strings.TrimSpace(args.ClaimToken),
+				"reason":                 strings.TrimSpace(args.Reason),
+				"result_md":              strings.TrimSpace(args.ResultMD),
+				"result_payload_version": version,
+				"result_payload":         args.ResultPayload,
+			}, cfg.AgentToken)
+			if err != nil {
+				return toolError(err)
+			}
+			return toolResult(resBody)
+		case "tasq_link_git_ref":
+			var args linkGitRefArgs
+			if err := decodeArgs(payload.Arguments, &args); err != nil {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: err.Error()}}
+			}
+			if args.TaskID == 0 {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: "task_id is required"}}
+			}
+			resBody, err := tasqJSON(cfg, http.MethodPost, fmt.Sprintf("/tasks/%d/git-link", args.TaskID), map[string]any{
+				"repo":        strings.TrimSpace(args.Repo),
+				"branch":      strings.TrimSpace(args.Branch),
+				"base_commit": strings.TrimSpace(args.BaseCommit),
+				"commit_sha":  strings.TrimSpace(args.CommitSHA),
+			}, cfg.AgentToken)
 			if err != nil {
 				return toolError(err)
 			}
@@ -416,6 +664,31 @@ func toolError(err error) rpcResponse {
 		Code:    -32000,
 		Message: err.Error(),
 	}}
+}
+
+func validateResultPayloadV2(payload resultPayloadV2) error {
+	if strings.TrimSpace(payload.Summary) == "" {
+		return fmt.Errorf("result_payload.summary is required")
+	}
+	fields := map[string][]string{
+		"changes":    payload.Changes,
+		"paths":      payload.Paths,
+		"commands":   payload.Commands,
+		"tests":      payload.Tests,
+		"artifacts":  payload.Artifacts,
+		"next_risks": payload.NextRisks,
+	}
+	for name, values := range fields {
+		if len(values) == 0 {
+			return fmt.Errorf("result_payload.%s must be a non-empty array", name)
+		}
+		for i, item := range values {
+			if strings.TrimSpace(item) == "" {
+				return fmt.Errorf("result_payload.%s[%d] must be non-empty", name, i)
+			}
+		}
+	}
+	return nil
 }
 
 func getenv(key, fallback string) string {

@@ -1,4 +1,4 @@
-# tasq-mcp (Phase 2)
+# tasq-mcp (Phase 3)
 
 MCP stdio server for TasQ runtime integration.
 
@@ -8,11 +8,16 @@ MCP stdio server for TasQ runtime integration.
 - `tools/list`
 - `tools/call` tools:
   - `tasq_ping`
+  - `tasq_result_payload_template`
   - `tasq_claim_next`
   - `tasq_get_task_context`
   - `tasq_runtime_alerts`
+  - `tasq_heartbeat`
+  - `tasq_complete_task`
+  - `tasq_fail_task`
+  - `tasq_link_git_ref`
 
-Phase 2 provides core read/claim runtime API access.
+Phase 3 adds write-path runtime APIs for heartbeat and task finalization.
 
 ## Environment
 - `TASQ_API_BASE` (default: `http://localhost:8080`)
