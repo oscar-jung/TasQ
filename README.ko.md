@@ -55,6 +55,15 @@ docker compose up --build
 - Web: http://localhost:5173
 - API: http://localhost:8080
 - DB: localhost:5432
+- MCP (HTTP): http://localhost:8091/mcp
+
+## Codex MCP 설정
+현재 Codex CLI 환경에서는 stdio 대신 HTTP MCP transport 사용을 권장합니다.
+
+```bash
+docker compose up -d --build mcp
+codex mcp add tasq-http --url http://localhost:8091/mcp
+```
 
 ## AI/운영 참고 문서
 - Agent API 계약: `tasq-backend/docs/agent_contract.md`

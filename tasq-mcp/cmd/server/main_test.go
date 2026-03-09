@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -77,9 +78,9 @@ func TestMCPRuntimeFlowClaimContextHeartbeatComplete(t *testing.T) {
 	}
 
 	resp = callTool(t, cfg, "tasq_heartbeat", map[string]any{
-		"task_id":      101,
-		"agent_id":     "worker-1",
-		"claim_token":  "claim-token-1",
+		"task_id":       101,
+		"agent_id":      "worker-1",
+		"claim_token":   "claim-token-1",
 		"lease_seconds": 120,
 	})
 	if resp.Error != nil {
@@ -202,6 +203,56 @@ func TestMCPRuntimeFlowFailAndRuntimeAlerts(t *testing.T) {
 	}
 	if strings.TrimSpace(authForAlerts) != "Bearer admin-token" {
 		t.Fatalf("expected runtime alerts to use admin token fallback, got %q", authForAlerts)
+	}
+}
+
+func TestHTTPRPCInitializeAndToolsList(t *testing.T) {
+	cfg := config{APIBase: "http://localhost:8080", Transport: "http", HTTPPath: "/mcp"}
+
+	initReq := rpcRequest{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage("1"),
+		Method:  "initialize",
+		Params:  json.RawMessage(`{"protocolVersion":"2024-11-05"}`),
+	}
+	initBody, err := json.Marshal(initReq)
+	if err != nil {
+		t.Fatalf("marshal init request: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(initBody))
+	rec := httptest.NewRecorder()
+	handleHTTPRPC(rec, req, cfg)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("init status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var initResp rpcResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &initResp); err != nil {
+		t.Fatalf("decode init response: %v", err)
+	}
+	if initResp.Error != nil {
+		t.Fatalf("init rpc error: %+v", initResp.Error)
+	}
+
+	listReq := rpcRequest{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage("2"),
+		Method:  "tools/list",
+		Params:  json.RawMessage(`{}`),
+	}
+	listBody, err := json.Marshal(listReq)
+	if err != nil {
+		t.Fatalf("marshal list request: %v", err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(listBody))
+	rec = httptest.NewRecorder()
+	handleHTTPRPC(rec, req, cfg)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("tools/list status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	if !strings.Contains(rec.Body.String(), "tasq_claim_next") {
+		t.Fatalf("tools/list response missing tasq_claim_next: %s", rec.Body.String())
 	}
 }
 

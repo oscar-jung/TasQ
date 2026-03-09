@@ -1,9 +1,11 @@
-# tasq-mcp (Phase 4)
+# tasq-mcp
 
-MCP stdio server for TasQ runtime integration.
+MCP server for TasQ runtime integration. It supports both `stdio` and HTTP transport.
 
 ## Current status
-- MCP transport (stdio, `Content-Length` framing)
+- MCP transport:
+  - `stdio`
+  - HTTP JSON-RPC endpoint for `codex mcp add --url`
 - `initialize`
 - `tools/list`
 - `tools/call` tools:
@@ -27,14 +29,34 @@ Phase 4 adds optional planner/admin tools.
 - `TASQ_API_BASE` (default: `http://localhost:8080`)
 - `TASQ_TOKEN_AGENT` (used by claim/context tools)
 - `TASQ_TOKEN_ADMIN` (required for admin tools, fallback for runtime alerts)
+- `TASQ_MCP_TRANSPORT` (`stdio` or `http`, default: `stdio`)
+- `TASQ_MCP_HTTP_ADDR` (default: `127.0.0.1:8091`)
+- `TASQ_MCP_HTTP_PATH` (default: `/mcp`)
 
-## Run
+## Run (stdio)
 ```bash
 cd tasq-mcp
 go run ./cmd/server
 ```
 
-Logs are written to stderr.
+## Run (HTTP)
+```bash
+cd tasq-mcp
+TASQ_MCP_TRANSPORT=http TASQ_MCP_HTTP_ADDR=127.0.0.1:8091 go run ./cmd/server
+```
+
+Then register it in Codex:
+```bash
+codex mcp add tasq-http --url http://localhost:8091/mcp
+```
+
+With Docker Compose:
+```bash
+docker compose up -d --build mcp
+codex mcp add tasq-http --url http://localhost:8091/mcp
+```
+
+Logs are written to stderr only when `TASQ_MCP_DEBUG=1`.
 
 ## Smoke test
 ```bash

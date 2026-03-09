@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -40,6 +41,9 @@ type config struct {
 	AgentToken string
 	AdminToken string
 	Debug      bool
+	Transport  string
+	HTTPAddr   string
+	HTTPPath   string
 }
 
 type claimNextArgs struct {
@@ -143,19 +147,104 @@ func main() {
 	debugf(cfg, "tasq-mcp starting; api_base=%s agent_token=%t admin_token=%t",
 		cfg.APIBase, cfg.AgentToken != "", cfg.AdminToken != "")
 
-	if err := serve(os.Stdin, os.Stdout, cfg); err != nil {
+	var err error
+	switch cfg.Transport {
+	case "http":
+		err = serveHTTP(cfg)
+	default:
+		err = serve(os.Stdin, os.Stdout, cfg)
+	}
+	if err != nil {
 		debugf(cfg, "tasq-mcp fatal: %v", err)
 		os.Exit(1)
 	}
 }
 
 func loadConfig() config {
+	transport := getenv("TASQ_MCP_TRANSPORT", "stdio")
+	httpAddr := getenv("TASQ_MCP_HTTP_ADDR", "127.0.0.1:8091")
+	httpPath := getenv("TASQ_MCP_HTTP_PATH", "/mcp")
+
+	flag.StringVar(&transport, "transport", transport, "mcp transport: stdio or http")
+	flag.StringVar(&httpAddr, "http-addr", httpAddr, "http listen address")
+	flag.StringVar(&httpPath, "http-path", httpPath, "http rpc path")
+	flag.Parse()
+
 	return config{
 		APIBase:    getenv("TASQ_API_BASE", "http://localhost:8080"),
 		AgentToken: strings.TrimSpace(os.Getenv("TASQ_TOKEN_AGENT")),
 		AdminToken: strings.TrimSpace(os.Getenv("TASQ_TOKEN_ADMIN")),
 		Debug:      strings.EqualFold(strings.TrimSpace(os.Getenv("TASQ_MCP_DEBUG")), "1"),
+		Transport:  strings.ToLower(strings.TrimSpace(transport)),
+		HTTPAddr:   strings.TrimSpace(httpAddr),
+		HTTPPath:   strings.TrimSpace(httpPath),
 	}
+}
+
+func serveHTTP(cfg config) error {
+	mux := http.NewServeMux()
+	mux.HandleFunc(cfg.HTTPPath, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodOptions:
+			w.Header().Set("Allow", "POST, OPTIONS")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		case http.MethodPost:
+			handleHTTPRPC(w, r, cfg)
+			return
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	})
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	debugf(cfg, "tasq-mcp http listening on %s%s", cfg.HTTPAddr, cfg.HTTPPath)
+	server := &http.Server{
+		Addr:              cfg.HTTPAddr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	return server.ListenAndServe()
+}
+
+func handleHTTPRPC(w http.ResponseWriter, r *http.Request, cfg config) {
+	defer r.Body.Close()
+
+	var req rpcRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeHTTPRPC(w, rpcResponse{
+			JSONRPC: "2.0",
+			Error: &rpcError{
+				Code:    -32700,
+				Message: "parse error",
+			},
+		})
+		return
+	}
+	debugf(cfg, "http recv method=%s id_present=%t", req.Method, len(req.ID) > 0)
+
+	resp := handleRequest(req, cfg)
+	if len(req.ID) == 0 {
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+	resp.JSONRPC = "2.0"
+	resp.ID = req.ID
+	writeHTTPRPC(w, resp)
+}
+
+func writeHTTPRPC(w http.ResponseWriter, resp rpcResponse) {
+	data, err := json.Marshal(resp)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(data)
 }
 
 func serve(in io.Reader, out io.Writer, cfg config) error {
@@ -172,6 +261,7 @@ func serve(in io.Reader, out io.Writer, cfg config) error {
 
 		var req rpcRequest
 		if err := json.Unmarshal(body, &req); err != nil {
+			debugf(cfg, "parse error for raw body: %q", string(body))
 			_ = writeResponse(w, rpcResponse{
 				JSONRPC: "2.0",
 				Error: &rpcError{
@@ -181,6 +271,7 @@ func serve(in io.Reader, out io.Writer, cfg config) error {
 			})
 			continue
 		}
+		debugf(cfg, "recv method=%s id_present=%t", req.Method, len(req.ID) > 0)
 
 		resp := handleRequest(req, cfg)
 		if len(req.ID) == 0 {
@@ -188,6 +279,11 @@ func serve(in io.Reader, out io.Writer, cfg config) error {
 		}
 		resp.ID = req.ID
 		resp.JSONRPC = "2.0"
+		if resp.Error != nil {
+			debugf(cfg, "send error method=%s code=%d message=%s", req.Method, resp.Error.Code, resp.Error.Message)
+		} else {
+			debugf(cfg, "send result method=%s", req.Method)
+		}
 		if err := writeResponse(w, resp); err != nil {
 			return err
 		}

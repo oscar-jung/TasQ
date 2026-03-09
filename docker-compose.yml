@@ -53,5 +53,21 @@ services:
     ports:
       - "5173:5173"
 
+  mcp:
+    build:
+      context: ./tasq-mcp
+    container_name: tasq-mcp
+    depends_on:
+      - api
+    environment:
+      TASQ_API_BASE: http://api:8080
+      TASQ_TOKEN_AGENT: agent-token
+      TASQ_TOKEN_ADMIN: human-token
+      TASQ_MCP_TRANSPORT: http
+      TASQ_MCP_HTTP_ADDR: 0.0.0.0:8091
+      TASQ_MCP_HTTP_PATH: /mcp
+    ports:
+      - "8091:8091"
+
 volumes:
   tasq-db-data:
