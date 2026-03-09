@@ -71,6 +71,10 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
   - Handler: `(*server).updateTaskCapabilities` in `internal/server/tasks.go`
   - Purpose: update required capability labels for claim filtering.
 
+- `GET /tasks/:task_id/capabilities`
+  - Handler: `(*server).getTaskCapabilities` in `internal/server/tasks.go`
+  - Purpose: read required capability labels used by claim filtering.
+
 - `PATCH /tasks/:task_id/content`
   - Handler: `(*server).updateTaskContent` in `internal/server/tasks.go`
   - Purpose: update title/spec/result fields.

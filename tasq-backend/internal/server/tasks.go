@@ -135,6 +135,26 @@ func (s *server) updateTaskCapabilities(w http.ResponseWriter, r *http.Request, 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// getTaskCapabilities handles GET /tasks/:task_id/capabilities.
+func (s *server) getTaskCapabilities(w http.ResponseWriter, r *http.Request, taskID int64) {
+	var capabilities []string
+	if err := s.db.QueryRowContext(r.Context(), `
+		SELECT required_capabilities
+		FROM tasks
+		WHERE id = $1`, taskID).Scan(pq.Array(&capabilities)); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "task not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"task_id":               taskID,
+		"required_capabilities": capabilities,
+	})
+}
+
 // addDependency handles POST /tasks/:task_id/dependencies.
 func (s *server) addDependency(w http.ResponseWriter, r *http.Request, taskID int64) {
 	var req addDependencyReq

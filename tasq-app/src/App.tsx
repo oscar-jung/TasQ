@@ -72,6 +72,11 @@ type ProjectEventsResponse = {
   events: TaskEventSummary[]
 }
 
+type TaskCapabilitiesResponse = {
+  task_id: number
+  required_capabilities: string[]
+}
+
 type ClaimNextResponse = {
   task: TaskNode | null
   claim?: {
@@ -120,6 +125,7 @@ export function App() {
   const [isSavingStatus, setIsSavingStatus] = useState(false)
   const [isSavingExecutionPolicy, setIsSavingExecutionPolicy] = useState(false)
   const [isSavingGitLink, setIsSavingGitLink] = useState(false)
+  const [isSavingCapabilities, setIsSavingCapabilities] = useState(false)
   const [isAgentActionRunning, setIsAgentActionRunning] = useState(false)
   const [taskMessage, setTaskMessage] = useState('')
   const [taskContext, setTaskContext] = useState<TaskContextResponse | null>(null)
@@ -136,9 +142,11 @@ export function App() {
   const [gitBranchDraft, setGitBranchDraft] = useState('')
   const [gitBaseCommitDraft, setGitBaseCommitDraft] = useState('')
   const [gitCommitDraft, setGitCommitDraft] = useState('')
+  const [requiredCapabilitiesDraft, setRequiredCapabilitiesDraft] = useState('')
   const [agentIDDraft, setAgentIDDraft] = useState('agent-local')
   const [leaseSecondsDraft, setLeaseSecondsDraft] = useState('120')
   const [claimTokenDraft, setClaimTokenDraft] = useState('')
+  const [agentCapabilitiesDraft, setAgentCapabilitiesDraft] = useState('')
   const [failReasonDraft, setFailReasonDraft] = useState('')
   const [addChildModalTask, setAddChildModalTask] = useState<TaskNode | null>(null)
   const [addChildTitle, setAddChildTitle] = useState('')
@@ -268,7 +276,9 @@ export function App() {
       setGitBranchDraft('')
       setGitBaseCommitDraft('')
       setGitCommitDraft('')
+      setRequiredCapabilitiesDraft('')
       setClaimTokenDraft('')
+      setAgentCapabilitiesDraft('')
       setFailReasonDraft('')
       return
     }
@@ -283,6 +293,7 @@ export function App() {
       setIsResultDirty(false)
       setTaskMessage('')
       setMaxAttemptsDraft(String(selectedTask.max_attempts))
+      setRequiredCapabilitiesDraft('')
       return
     }
 
@@ -337,6 +348,29 @@ export function App() {
       }
     }
 
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedTaskID])
+
+  useEffect(() => {
+    if (!selectedTaskID) {
+      setRequiredCapabilitiesDraft('')
+      return
+    }
+    let cancelled = false
+    const run = async () => {
+      try {
+        const data = await fetchTaskCapabilities(selectedTaskID)
+        if (cancelled) return
+        setRequiredCapabilitiesDraft(data.required_capabilities.join(', '))
+      } catch {
+        if (!cancelled) {
+          setRequiredCapabilitiesDraft('')
+        }
+      }
+    }
     void run()
     return () => {
       cancelled = true
@@ -521,6 +555,19 @@ export function App() {
     }
   }
 
+  async function fetchTaskCapabilities(taskID: number) {
+    const res = await fetch(`${apiBase}/tasks/${taskID}/capabilities`)
+    if (!res.ok) {
+      const message = await res.text()
+      throw new Error(message || 'failed to fetch task capabilities')
+    }
+    const raw = (await res.json()) as TaskCapabilitiesResponse
+    return {
+      task_id: raw.task_id,
+      required_capabilities: Array.isArray(raw.required_capabilities) ? raw.required_capabilities : []
+    }
+  }
+
   function hasValidationIssues(report: TreeValidationReport) {
     return (
       report.missing_parent_task_ids.length > 0 ||
@@ -648,6 +695,18 @@ export function App() {
     setTaskEvents(taskEventData.events)
     if (selectedProjectID) {
       setProjectEvents(projectEventData.events)
+    }
+  }
+
+  async function patchTaskCapabilities(taskID: number, requiredCapabilities: string[]) {
+    const res = await fetch(`${apiBase}/tasks/${taskID}/capabilities`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ required_capabilities: requiredCapabilities })
+    })
+    if (!res.ok) {
+      const message = await res.text()
+      throw new Error(message || 'failed to update task capabilities')
     }
   }
 
@@ -943,6 +1002,41 @@ export function App() {
     }
   }
 
+  function parseCapabilityInput(input: string) {
+    return Array.from(
+      new Set(
+        input
+          .split(',')
+          .map((item) => item.trim().toLowerCase())
+          .filter((item) => item.length > 0)
+      )
+    )
+  }
+
+  async function saveTaskCapabilities() {
+    if (!selectedTask) return
+    const required = parseCapabilityInput(requiredCapabilitiesDraft)
+
+    setTaskMessage('')
+    setIsSavingCapabilities(true)
+    try {
+      await patchTaskCapabilities(selectedTask.id, required)
+      setRequiredCapabilitiesDraft(required.join(', '))
+      if (selectedProjectID) {
+        const projectEventData = await fetchProjectEvents(selectedProjectID)
+        setProjectEvents(projectEventData.events)
+      }
+      const taskEventData = await fetchTaskEvents(selectedTask.id)
+      setTaskEvents(taskEventData.events)
+      setTaskMessage('Task capabilities saved.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'failed to save task capabilities'
+      setTaskMessage(message)
+    } finally {
+      setIsSavingCapabilities(false)
+    }
+  }
+
   async function saveGitLink(e: FormEvent) {
     e.preventDefault()
     if (!selectedTask) return
@@ -985,6 +1079,7 @@ export function App() {
       return
     }
     const lease = Number(leaseSecondsDraft)
+    const capabilities = parseCapabilityInput(agentCapabilitiesDraft)
     if (!Number.isInteger(lease) || lease <= 0) {
       setTaskMessage('Lease seconds must be a positive integer.')
       return
@@ -996,7 +1091,12 @@ export function App() {
       const res = await fetch(`${apiBase}/agents/claim-next`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_id: selectedProjectID, agent_id: agentID, lease_seconds: lease })
+        body: JSON.stringify({
+          project_id: selectedProjectID,
+          agent_id: agentID,
+          lease_seconds: lease,
+          capabilities
+        })
       })
       if (!res.ok) {
         const message = await res.text()
@@ -1493,6 +1593,20 @@ export function App() {
                   </Button>
                 </div>
 
+                <div className="mt-3">
+                  <p className="mb-1 text-[11px] text-muted-foreground">Required capabilities (comma separated)</p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="go, backend, tests"
+                      value={requiredCapabilitiesDraft}
+                      onChange={(e) => setRequiredCapabilitiesDraft(e.target.value)}
+                    />
+                    <Button size="sm" variant="outline" disabled={isSavingCapabilities} onClick={() => void saveTaskCapabilities()}>
+                      {isSavingCapabilities ? 'Saving...' : 'Save capabilities'}
+                    </Button>
+                  </div>
+                </div>
+
                 <form className="mt-3 space-y-2" onSubmit={saveGitLink}>
                   <p className="text-[11px] text-muted-foreground">Link Git result</p>
                   <div className="grid grid-cols-2 gap-2">
@@ -1640,6 +1754,13 @@ export function App() {
                       placeholder="lease seconds"
                       value={leaseSecondsDraft}
                       onChange={(e) => setLeaseSecondsDraft(e.target.value)}
+                      disabled={isAgentActionRunning}
+                    />
+                    <Input
+                      className="col-span-2"
+                      placeholder="agent capabilities (comma separated)"
+                      value={agentCapabilitiesDraft}
+                      onChange={(e) => setAgentCapabilitiesDraft(e.target.value)}
                       disabled={isAgentActionRunning}
                     />
                     <Input

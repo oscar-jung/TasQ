@@ -484,6 +484,13 @@ func (s *server) tasksSubrouter(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "capabilities":
+		if r.Method == http.MethodGet {
+			if _, ok := s.requireTaskAccess(w, r, taskID, "project:read", false); !ok {
+				return
+			}
+			s.getTaskCapabilities(w, r, taskID)
+			return
+		}
 		if r.Method == http.MethodPatch {
 			if _, ok := s.requireTaskAccess(w, r, taskID, "task:admin", true); !ok {
 				return
