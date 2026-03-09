@@ -384,6 +384,13 @@ func (s *server) projectsSubrouter(w http.ResponseWriter, r *http.Request) {
 		s.listProjectEvents(w, r, projectID)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "stream" && r.Method == http.MethodGet {
+		if !s.requireProjectAccess(w, r, projectID, "project:read", false) {
+			return
+		}
+		s.streamProjectEvents(w, r, projectID)
+		return
+	}
 
 	http.NotFound(w, r)
 }

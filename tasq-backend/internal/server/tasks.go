@@ -69,6 +69,17 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, projectID in
 		return
 	}
 
+	actorType, actorID := actorForEvent(r)
+	if err := logEvent(r.Context(), tx, t.ID, "task.created", actorType, actorID, map[string]any{
+		"parent_task_id":        req.ParentTaskID,
+		"title":                 t.Title,
+		"max_attempts":          t.MaxAttempts,
+		"required_capabilities": requiredCapabilities,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	if err := tx.Commit(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -410,20 +421,45 @@ func (s *server) updateTaskExecutionPolicy(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	res, err := s.db.ExecContext(r.Context(), `
-		UPDATE tasks
-		SET max_attempts = $2,
-			updated_at = NOW()
-		WHERE id = $1`, taskID, req.MaxAttempts)
+	tx, err := s.db.BeginTx(r.Context(), nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	affected, _ := res.RowsAffected()
-	if affected == 0 {
-		http.Error(w, "task not found", http.StatusNotFound)
+	defer tx.Rollback()
+
+	var projectID int64
+	if err := tx.QueryRowContext(r.Context(), `SELECT project_id FROM tasks WHERE id = $1 FOR UPDATE`, taskID).Scan(&projectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "task not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	if _, err := tx.ExecContext(r.Context(), `
+		UPDATE tasks
+		SET max_attempts = $2,
+			updated_at = NOW()
+		WHERE id = $1`, taskID, req.MaxAttempts); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	actorType, actorID := actorForEvent(r)
+	if err := logEvent(r.Context(), tx, taskID, "task.execution_policy.updated", actorType, actorID, map[string]any{
+		"max_attempts": req.MaxAttempts,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	s.maybeRunTreeGuard(r.Context(), projectID)
 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -530,6 +566,16 @@ func (s *server) updateTaskContent(w http.ResponseWriter, r *http.Request, taskI
 			updated_at = NOW()
 		WHERE id = $1`,
 		taskID, req.Title, req.SpecMD, req.ResultMD); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	actorType, actorID := actorForEvent(r)
+	if err := logEvent(r.Context(), tx, taskID, "task.content.updated", actorType, actorID, map[string]any{
+		"title_changed":  req.Title != nil,
+		"spec_changed":   req.SpecMD != nil,
+		"result_changed": req.ResultMD != nil,
+	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -788,6 +834,18 @@ func (s *server) reorderTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	actorType, actorID := actorForEvent(r)
+	if len(req.OrderedTask) > 0 {
+		if err := logEvent(r.Context(), tx, req.OrderedTask[0], "task.reordered", actorType, actorID, map[string]any{
+			"project_id":       req.ProjectID,
+			"parent_task_id":   req.ParentTaskID,
+			"ordered_task_ids": req.OrderedTask,
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -912,6 +970,15 @@ func (s *server) moveTask(w http.ResponseWriter, r *http.Request, taskID int64) 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+	}
+
+	actorType, actorID := actorForEvent(r)
+	if err := logEvent(r.Context(), tx, taskID, "task.moved", actorType, actorID, map[string]any{
+		"new_parent_task_id": req.NewParentTaskID,
+		"new_index":          req.NewIndex,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	if err := tx.Commit(); err != nil {

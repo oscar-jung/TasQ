@@ -24,7 +24,7 @@ func withCORS(next http.Handler) http.Handler {
 // withJSON sets JSON content-type for API routes.
 func withJSON(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/healthz") {
+		if strings.HasPrefix(r.URL.Path, "/healthz") || strings.HasSuffix(r.URL.Path, "/stream") {
 			next.ServeHTTP(w, r)
 			return
 		}

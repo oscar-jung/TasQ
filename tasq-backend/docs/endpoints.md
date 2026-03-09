@@ -45,6 +45,10 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
   - Handler: `(*server).listProjectEvents` in `internal/server/events.go`
   - Purpose: list project-level audit timeline events (newest first).
 
+- `GET /projects/:project_id/stream`
+  - Handler: `(*server).streamProjectEvents` in `internal/server/events.go`
+  - Purpose: stream project task events over SSE for near-real-time UI refresh.
+
 - `POST /projects/:project_id/claims/reconcile`
   - Handler: `(*server).reconcileProjectClaims` in `internal/server/reconcile.go`
   - Purpose: manually release expired active claims and restore stale in-progress tasks.

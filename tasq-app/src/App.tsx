@@ -148,6 +148,26 @@ type TreeValidationReport = {
 
 const apiBase = import.meta.env.VITE_API_BASE ?? 'http://localhost:8080'
 const selectedProjectStorageKey = 'tasq.selectedProjectID'
+const selectedTaskStorageKey = 'tasq.selectedTaskIDByProject'
+
+function readSelectedTaskMap() {
+  if (typeof window === 'undefined') return {} as Record<string, number>
+  try {
+    const raw = window.localStorage.getItem(selectedTaskStorageKey)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const out: Record<string, number> = {}
+    Object.entries(parsed).forEach(([key, value]) => {
+      const numeric = Number(value)
+      if (Number.isInteger(numeric) && numeric > 0) {
+        out[key] = numeric
+      }
+    })
+    return out
+  } catch {
+    return {}
+  }
+}
 
 function buildProjectAlertBadge(data: RuntimeAlertsResponse): ProjectAlertBadge {
   return {
@@ -249,6 +269,7 @@ export function App() {
   const [isPanningUI, setIsPanningUI] = useState(false)
   const syncedTaskIDRef = useRef<number | null>(null)
   const lastValidationAlertKeyRef = useRef('')
+  const realtimeRefreshTimerRef = useRef<number | null>(null)
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectID) ?? null,
@@ -374,6 +395,17 @@ export function App() {
     }
     window.localStorage.setItem(selectedProjectStorageKey, String(selectedProjectID))
   }, [selectedProjectID])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !selectedProjectID) return
+    const next = readSelectedTaskMap()
+    if (selectedTaskID === null) {
+      delete next[String(selectedProjectID)]
+    } else {
+      next[String(selectedProjectID)] = selectedTaskID
+    }
+    window.localStorage.setItem(selectedTaskStorageKey, JSON.stringify(next))
+  }, [selectedProjectID, selectedTaskID])
 
   useEffect(() => {
     if (selectedProjectID) {
@@ -507,6 +539,41 @@ export function App() {
       cancelled = true
     }
   }, [selectedTaskID])
+
+  useEffect(() => {
+    if (!selectedProjectID || typeof window === 'undefined' || typeof EventSource === 'undefined') {
+      return
+    }
+
+    const source = new EventSource(`${apiBase}/projects/${selectedProjectID}/stream`)
+    const scheduleRefresh = () => {
+      if (realtimeRefreshTimerRef.current !== null) {
+        window.clearTimeout(realtimeRefreshTimerRef.current)
+      }
+      realtimeRefreshTimerRef.current = window.setTimeout(() => {
+        void fetchProjects()
+        void fetchTaskTree(selectedProjectID)
+        if (selectedTaskID) {
+          void refreshObservability(selectedTaskID, selectedProjectID)
+        } else {
+          void refreshRuntimeAlerts()
+        }
+      }, 250)
+    }
+
+    source.addEventListener('task-event', scheduleRefresh)
+    source.onerror = () => {
+      // Keep existing polling fallback active; SSE reconnects automatically.
+    }
+
+    return () => {
+      if (realtimeRefreshTimerRef.current !== null) {
+        window.clearTimeout(realtimeRefreshTimerRef.current)
+        realtimeRefreshTimerRef.current = null
+      }
+      source.close()
+    }
+  }, [selectedProjectID, selectedTaskID])
 
   useEffect(() => {
     if (!selectedTaskID) {
@@ -757,8 +824,27 @@ export function App() {
     const data = (await res.json()) as TaskNode[]
     setTree(data)
 
-    if (!selectedTaskID && data.length > 0) {
+    const savedByProject = readSelectedTaskMap()
+    const savedTaskID = savedByProject[String(projectID)] ?? null
+
+    const flatten = (nodes: TaskNode[]): number[] =>
+      nodes.flatMap((node) => [node.id, ...flatten(node.children)])
+
+    const allTaskIDs = new Set(flatten(data))
+
+    if (savedTaskID && allTaskIDs.has(savedTaskID)) {
+      setSelectedTaskID(savedTaskID)
+      return
+    }
+
+    if (selectedTaskID && allTaskIDs.has(selectedTaskID)) {
+      return
+    }
+
+    if (data.length > 0) {
       setSelectedTaskID(data[0].id)
+    } else {
+      setSelectedTaskID(null)
     }
   }
 
