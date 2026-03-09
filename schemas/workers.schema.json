@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tasq.local/schemas/workers.schema.json",
+  "title": "TasQ Worker Spawn Spec",
+  "description": "Schema for scripts/spawn_workers.sh input files.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project_id",
+    "workspace",
+    "api_base",
+    "lease_seconds",
+    "heartbeat_seconds",
+    "poll_seconds",
+    "workers"
+  ],
+  "properties": {
+    "project_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Numeric TasQ project id."
+    },
+    "workspace": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Absolute path to the repository workspace where workers should run."
+    },
+    "api_base": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https?://",
+      "description": "TasQ API base URL."
+    },
+    "lease_seconds": {
+      "type": "integer",
+      "minimum": 30,
+      "description": "Claim lease duration passed to TasQ workers."
+    },
+    "heartbeat_seconds": {
+      "type": "integer",
+      "minimum": 15,
+      "description": "Heartbeat cadence used by workers and runtime alert polling."
+    },
+    "poll_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Spawner polling interval for runtime alerts."
+    },
+    "log_dir": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional directory where worker logs should be written."
+    },
+    "workers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/worker"
+      },
+      "description": "Worker sessions to spawn."
+    }
+  },
+  "$defs": {
+    "worker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent_id", "capabilities"],
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique TasQ agent id for one worker session."
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "description": "Capability set passed to tasq_claim_next."
+        }
+      }
+    }
+  }
+}

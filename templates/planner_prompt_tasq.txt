@@ -13,6 +13,7 @@ Rules:
 - Do not implement code in this session.
 - At the end, report the numeric project_id.
 - Also create a workers.json file in the current workspace based on examples/workers.sample.json.
+- Ensure the file conforms to schemas/workers.schema.json.
 - Fill workers.json with:
   - the actual numeric project_id
   - the absolute workspace path

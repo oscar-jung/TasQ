@@ -106,6 +106,7 @@ cp ./examples/workers.sample.json /abs/path/to/workers.json
 
 - 템플릿 파일: [templates/planner_prompt_tasq.txt](/Users/jung-yeon-woo/Development/Projects/tasq/templates/planner_prompt_tasq.txt)
 - 워커 스펙 샘플: [examples/workers.sample.json](/Users/jung-yeon-woo/Development/Projects/tasq/examples/workers.sample.json)
+- 워커 스펙 스키마: [schemas/workers.schema.json](/Users/jung-yeon-woo/Development/Projects/tasq/schemas/workers.schema.json)
 
 ```text
 You are a planning agent working with TasQ via MCP tools.
