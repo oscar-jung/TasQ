@@ -48,6 +48,8 @@
 - Claim lease defaults to `120s` when omitted.
 - `complete`/`fail` expect structured `result_payload` JSON with required keys:
   `summary`, `changes`, `paths`, `commands`, `tests`, `artifacts`, `next_risks`.
+  - Default schema `v2`: `summary` string, all other keys are arrays of strings.
+  - Legacy schema `v1`: all keys are non-empty strings.
 - Auth is configurable via:
   - `AUTH_MODE`: `off` (default), `optional`, `required`
   - `AUTH_TOKENS`: JSON array of token configs:

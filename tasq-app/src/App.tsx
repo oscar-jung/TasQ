@@ -693,12 +693,12 @@ export function App() {
     const now = new Date().toISOString()
     return {
       summary: `Updated via TasQ UI at ${now}`,
-      changes: 'See task result markdown for details.',
-      paths: 'N/A',
-      commands: 'N/A',
-      tests: 'N/A',
-      artifacts: 'N/A',
-      next_risks: 'N/A'
+      changes: ['See task result markdown for details.'],
+      paths: ['N/A'],
+      commands: ['N/A'],
+      tests: ['N/A'],
+      artifacts: ['N/A'],
+      next_risks: ['N/A']
     }
   }
 
@@ -1113,6 +1113,7 @@ export function App() {
           agent_id: agentID,
           claim_token: claimTokenDraft.trim(),
           result_md: taskResultDraft,
+          result_payload_version: 'v2',
           result_payload: buildDefaultResultPayload()
         })
       })
@@ -1152,6 +1153,7 @@ export function App() {
           claim_token: claimTokenDraft.trim(),
           reason: failReasonDraft.trim() || 'manual fail from UI',
           result_md: taskResultDraft,
+          result_payload_version: 'v2',
           result_payload: buildDefaultResultPayload()
         })
       })

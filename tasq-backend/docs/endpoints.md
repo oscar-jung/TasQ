@@ -114,14 +114,20 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
 - `POST /tasks/:task_id/complete`
   - Handler: `(*server).completeTask` in `internal/server/agents.go`
   - Purpose: complete claimed task and finalize result.
+  - Optional body field: `result_payload_version` (`v1` or `v2`, default `v2`)
   - Required body field: `result_payload` JSON object with keys
     `summary`, `changes`, `paths`, `commands`, `tests`, `artifacts`, `next_risks`.
+    - `v2` (default): `summary` is string, others are arrays of non-empty strings.
+    - `v1` (legacy): all fields are non-empty strings.
 
 - `POST /tasks/:task_id/fail`
   - Handler: `(*server).failTask` in `internal/server/agents.go`
   - Purpose: mark claimed task as failed and finalize run payload.
+  - Optional body field: `result_payload_version` (`v1` or `v2`, default `v2`)
   - Required body field: `result_payload` JSON object with keys
     `summary`, `changes`, `paths`, `commands`, `tests`, `artifacts`, `next_risks`.
+    - `v2` (default): `summary` is string, others are arrays of non-empty strings.
+    - `v1` (legacy): all fields are non-empty strings.
 
 - `POST /tasks/:task_id/git-link`
   - Handler: `(*server).linkTaskGitRef` in `internal/server/tasks.go`

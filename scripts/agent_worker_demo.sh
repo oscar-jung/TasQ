@@ -79,12 +79,12 @@ result_payload=$(
   jq -nc \
     --arg summary "Action ${ACTION} executed at ${now}" \
     --arg changes "See result_md report." \
-    --arg paths "N/A" \
-    --arg commands "agent_worker_demo.sh" \
+    --arg path "N/A" \
+    --arg cmd "agent_worker_demo.sh" \
     --arg tests "N/A" \
     --arg artifacts "N/A" \
-    --arg next_risks "N/A" \
-    '{summary:$summary,changes:$changes,paths:$paths,commands:$commands,tests:$tests,artifacts:$artifacts,next_risks:$next_risks}'
+    --arg risk "N/A" \
+    '{summary:$summary,changes:[$changes],paths:[$path],commands:[$cmd],tests:[$tests],artifacts:[$artifacts],next_risks:[$risk]}'
 )
 
 case "${ACTION}" in
@@ -93,7 +93,7 @@ case "${ACTION}" in
     curl "${curl_args[@]}" \
       -H "Content-Type: application/json" \
       -X POST "${API_BASE}/tasks/${task_id}/complete" \
-      -d "$(jq -nc --arg agent_id "${AGENT_ID}" --arg claim_token "${claim_token}" --arg result_md "${result_md}" --argjson result_payload "${result_payload}" '{agent_id:$agent_id,claim_token:$claim_token,result_md:$result_md,result_payload:$result_payload}')" \
+      -d "$(jq -nc --arg agent_id "${AGENT_ID}" --arg claim_token "${claim_token}" --arg result_md "${result_md}" --argjson result_payload "${result_payload}" '{agent_id:$agent_id,claim_token:$claim_token,result_md:$result_md,result_payload_version:"v2",result_payload:$result_payload}')" \
       | jq .
     ;;
   fail)
@@ -101,7 +101,7 @@ case "${ACTION}" in
     curl "${curl_args[@]}" \
       -H "Content-Type: application/json" \
       -X POST "${API_BASE}/tasks/${task_id}/fail" \
-      -d "$(jq -nc --arg agent_id "${AGENT_ID}" --arg claim_token "${claim_token}" --arg reason "demo failure" --arg result_md "${result_md}" --argjson result_payload "${result_payload}" '{agent_id:$agent_id,claim_token:$claim_token,reason:$reason,result_md:$result_md,result_payload:$result_payload}')" \
+      -d "$(jq -nc --arg agent_id "${AGENT_ID}" --arg claim_token "${claim_token}" --arg reason "demo failure" --arg result_md "${result_md}" --argjson result_payload "${result_payload}" '{agent_id:$agent_id,claim_token:$claim_token,reason:$reason,result_md:$result_md,result_payload_version:"v2",result_payload:$result_payload}')" \
       | jq .
     ;;
   release)

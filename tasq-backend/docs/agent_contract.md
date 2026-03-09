@@ -119,14 +119,15 @@ Request:
   "agent_id": "agent-1",
   "claim_token": "claim-token",
   "result_md": "## Work log ...",
+  "result_payload_version": "v2",
   "result_payload": {
     "summary": "...",
-    "changes": "...",
-    "paths": "...",
-    "commands": "...",
-    "tests": "...",
-    "artifacts": "...",
-    "next_risks": "..."
+    "changes": ["..."],
+    "paths": ["..."],
+    "commands": ["..."],
+    "tests": ["..."],
+    "artifacts": ["..."],
+    "next_risks": ["..."]
   }
 }
 ```
@@ -141,17 +142,22 @@ Request:
   "claim_token": "claim-token",
   "reason": "build failed",
   "result_md": "## Failure details ...",
+  "result_payload_version": "v2",
   "result_payload": {
     "summary": "...",
-    "changes": "...",
-    "paths": "...",
-    "commands": "...",
-    "tests": "...",
-    "artifacts": "...",
-    "next_risks": "..."
+    "changes": ["..."],
+    "paths": ["..."],
+    "commands": ["..."],
+    "tests": ["..."],
+    "artifacts": ["..."],
+    "next_risks": ["..."]
   }
 }
 ```
+
+Schema notes:
+- `v2` (default): `summary` string + list fields as `string[]`.
+- `v1` (legacy): all required fields are non-empty strings.
 
 ## Context / Observability APIs
 - `GET /tasks/:task_id/context`

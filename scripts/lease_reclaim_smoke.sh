@@ -89,11 +89,11 @@ fi
 echo "[test] complete reclaimed task"
 payload="$(jq -nc \
   --arg s "lease reclaim smoke" \
-  '{summary:$s,changes:$s,paths:$s,commands:$s,tests:$s,artifacts:$s,next_risks:$s}'
+  '{summary:$s,changes:[$s],paths:[$s],commands:[$s],tests:[$s],artifacts:[$s],next_risks:[$s]}'
 )"
 curl "${curl_args[@]}" -H "Content-Type: application/json" -X POST "${API_BASE}/tasks/${task_id}/complete" \
   -d "$(jq -nc --arg agent "agent-b" --arg token "${token_b}" --argjson payload "${payload}" \
-      '{agent_id:$agent,claim_token:$token,result_md:"done",result_payload:$payload}')" \
+      '{agent_id:$agent,claim_token:$token,result_md:"done",result_payload_version:"v2",result_payload:$payload}')" \
   | jq .
 
 echo "[pass] lease reclaim smoke passed"

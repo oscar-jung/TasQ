@@ -353,7 +353,7 @@ func (s *server) completeTask(w http.ResponseWriter, r *http.Request, taskID int
 	if !s.requireAgentIdentity(w, r, req.AgentID) {
 		return
 	}
-	resultPayload, err := parseRequiredResultPayload(req.ResultJSON)
+	resultPayload, err := parseRequiredResultPayload(req.ResultJSON, req.ResultPayloadVersion)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -446,7 +446,7 @@ func (s *server) failTask(w http.ResponseWriter, r *http.Request, taskID int64) 
 	if !s.requireAgentIdentity(w, r, req.AgentID) {
 		return
 	}
-	resultPayload, err := parseRequiredResultPayload(req.ResultJSON)
+	resultPayload, err := parseRequiredResultPayload(req.ResultJSON, req.ResultPayloadVersion)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -583,7 +583,7 @@ func generateClaimToken() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-func parseRequiredResultPayload(raw json.RawMessage) (map[string]any, error) {
+func parseRequiredResultPayload(raw json.RawMessage, version string) (map[string]any, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("result_payload is required")
 	}
@@ -592,25 +592,82 @@ func parseRequiredResultPayload(raw json.RawMessage) (map[string]any, error) {
 		return nil, fmt.Errorf("invalid result_payload json")
 	}
 
-	required := []string{
-		"summary",
-		"changes",
-		"paths",
-		"commands",
-		"tests",
-		"artifacts",
-		"next_risks",
+	schemaVersion := strings.ToLower(strings.TrimSpace(version))
+	if schemaVersion == "" {
+		schemaVersion = "v2"
 	}
-	for _, key := range required {
-		v, ok := payload[key]
-		if !ok {
-			return nil, fmt.Errorf("result_payload.%s is required", key)
+	switch schemaVersion {
+	case "v1":
+		required := []string{
+			"summary",
+			"changes",
+			"paths",
+			"commands",
+			"tests",
+			"artifacts",
+			"next_risks",
 		}
-		if s, isString := v.(string); isString && strings.TrimSpace(s) == "" {
-			return nil, fmt.Errorf("result_payload.%s must not be empty", key)
+		for _, key := range required {
+			v, ok := payload[key]
+			if !ok {
+				return nil, fmt.Errorf("result_payload.%s is required", key)
+			}
+			s, isString := v.(string)
+			if !isString {
+				return nil, fmt.Errorf("result_payload.%s must be a string in v1", key)
+			}
+			if strings.TrimSpace(s) == "" {
+				return nil, fmt.Errorf("result_payload.%s must not be empty", key)
+			}
 		}
+	case "v2":
+		if err := requireNonEmptyString(payload, "summary"); err != nil {
+			return nil, err
+		}
+		arrayKeys := []string{"changes", "paths", "commands", "tests", "artifacts", "next_risks"}
+		for _, key := range arrayKeys {
+			if err := requireStringArray(payload, key); err != nil {
+				return nil, err
+			}
+		}
+	default:
+		return nil, fmt.Errorf("unsupported result_payload_version: %s", schemaVersion)
 	}
+	payload["schema_version"] = schemaVersion
 	return payload, nil
+}
+
+func requireNonEmptyString(payload map[string]any, key string) error {
+	v, ok := payload[key]
+	if !ok {
+		return fmt.Errorf("result_payload.%s is required", key)
+	}
+	s, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("result_payload.%s must be a string", key)
+	}
+	if strings.TrimSpace(s) == "" {
+		return fmt.Errorf("result_payload.%s must not be empty", key)
+	}
+	return nil
+}
+
+func requireStringArray(payload map[string]any, key string) error {
+	v, ok := payload[key]
+	if !ok {
+		return fmt.Errorf("result_payload.%s is required", key)
+	}
+	items, ok := v.([]any)
+	if !ok {
+		return fmt.Errorf("result_payload.%s must be an array of strings", key)
+	}
+	for idx, item := range items {
+		s, ok := item.(string)
+		if !ok || strings.TrimSpace(s) == "" {
+			return fmt.Errorf("result_payload.%s[%d] must be a non-empty string", key, idx)
+		}
+	}
+	return nil
 }
 
 // getTaskContext handles GET /tasks/:task_id/context.

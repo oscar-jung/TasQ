@@ -75,12 +75,11 @@ fi
 echo "[test] complete claimed task"
 payload="$(jq -nc \
   --arg s "capability claim smoke" \
-  '{summary:$s,changes:$s,paths:$s,commands:$s,tests:$s,artifacts:$s,next_risks:$s}'
+  '{summary:$s,changes:[$s],paths:[$s],commands:[$s],tests:[$s],artifacts:[$s],next_risks:[$s]}'
 )"
 curl "${curl_args[@]}" -H "Content-Type: application/json" -X POST "${API_BASE}/tasks/${task_id}/complete" \
   -d "$(jq -nc --arg agent "agent-full" --arg token "${claim_token}" --argjson payload "${payload}" \
-      '{agent_id:$agent,claim_token:$token,result_md:"done",result_payload:$payload}')" \
+      '{agent_id:$agent,claim_token:$token,result_md:"done",result_payload_version:"v2",result_payload:$payload}')" \
   | jq .
 
 echo "[pass] capability claim smoke passed"
-

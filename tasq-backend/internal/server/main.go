@@ -103,18 +103,20 @@ type releaseReq struct {
 }
 
 type completeReq struct {
-	AgentID    string          `json:"agent_id"`
-	ClaimToken string          `json:"claim_token"`
-	ResultMD   string          `json:"result_md"`
-	ResultJSON json.RawMessage `json:"result_payload"`
+	AgentID              string          `json:"agent_id"`
+	ClaimToken           string          `json:"claim_token"`
+	ResultMD             string          `json:"result_md"`
+	ResultJSON           json.RawMessage `json:"result_payload"`
+	ResultPayloadVersion string          `json:"result_payload_version"`
 }
 
 type failReq struct {
-	AgentID    string          `json:"agent_id"`
-	ClaimToken string          `json:"claim_token"`
-	Reason     string          `json:"reason"`
-	ResultMD   string          `json:"result_md"`
-	ResultJSON json.RawMessage `json:"result_payload"`
+	AgentID              string          `json:"agent_id"`
+	ClaimToken           string          `json:"claim_token"`
+	Reason               string          `json:"reason"`
+	ResultMD             string          `json:"result_md"`
+	ResultJSON           json.RawMessage `json:"result_payload"`
+	ResultPayloadVersion string          `json:"result_payload_version"`
 }
 
 type moveTaskReq struct {
