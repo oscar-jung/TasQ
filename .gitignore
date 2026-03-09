@@ -7,3 +7,4 @@ demos/
 tasq-mcp/server
 tasq-backend/.gocache/
 tasq-backend/.gopath/
+workers.json
