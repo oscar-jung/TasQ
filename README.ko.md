@@ -228,6 +228,10 @@ rerun 시에는 branch-first 전략을 권장해:
 - rerun 경로용 새 브랜치를 만든다
 - 그 브랜치에서 구현을 이어간다
 - branch / base commit / produced commit을 task에 다시 링크한다
+- 링크할 때 ref kind를 구분해:
+  - `baseline`
+  - `rerun_branch`
+  - `produced`
 ```
 
 ## 에이전트 데모 실행

@@ -918,7 +918,7 @@ func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID i
 	}
 
 	gitRows, err := s.db.QueryContext(r.Context(), `
-		SELECT id, repo, branch, base_commit, commit_sha, created_at
+		SELECT id, repo, branch, base_commit, commit_sha, ref_kind, created_at
 		FROM task_git_refs
 		WHERE task_id = $1
 		ORDER BY created_at DESC
@@ -930,7 +930,7 @@ func (s *server) getTaskContext(w http.ResponseWriter, r *http.Request, taskID i
 	defer gitRows.Close()
 	for gitRows.Next() {
 		var ref taskGitRefSummary
-		if err := gitRows.Scan(&ref.ID, &ref.Repo, &ref.Branch, &ref.BaseCommit, &ref.CommitSHA, &ref.CreatedAt); err != nil {
+		if err := gitRows.Scan(&ref.ID, &ref.Repo, &ref.Branch, &ref.BaseCommit, &ref.CommitSHA, &ref.RefKind, &ref.CreatedAt); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

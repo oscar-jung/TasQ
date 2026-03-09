@@ -111,6 +111,7 @@ type linkGitRefArgs struct {
 	Branch     string `json:"branch,omitempty"`
 	BaseCommit string `json:"base_commit,omitempty"`
 	CommitSHA  string `json:"commit_sha,omitempty"`
+	RefKind    string `json:"ref_kind,omitempty"`
 }
 
 type createProjectArgs struct {
@@ -493,6 +494,7 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 								"branch":      map[string]any{"type": "string"},
 								"base_commit": map[string]any{"type": "string"},
 								"commit_sha":  map[string]any{"type": "string"},
+								"ref_kind":    map[string]any{"type": "string", "enum": []string{"baseline", "produced", "rerun_branch"}},
 							},
 							"required": []string{"task_id"},
 						},
@@ -740,6 +742,7 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 				"branch":      strings.TrimSpace(args.Branch),
 				"base_commit": strings.TrimSpace(args.BaseCommit),
 				"commit_sha":  strings.TrimSpace(args.CommitSHA),
+				"ref_kind":    strings.TrimSpace(args.RefKind),
 			}, cfg.AgentToken)
 			if err != nil {
 				return toolError(err)

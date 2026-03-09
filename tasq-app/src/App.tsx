@@ -43,6 +43,7 @@ type TaskGitRefSummary = {
   branch: string
   base_commit: string
   commit_sha: string
+  ref_kind: 'baseline' | 'produced' | 'rerun_branch'
   created_at: string
 }
 
@@ -266,6 +267,7 @@ export function App() {
   const [gitBranchDraft, setGitBranchDraft] = useState('')
   const [gitBaseCommitDraft, setGitBaseCommitDraft] = useState('')
   const [gitCommitDraft, setGitCommitDraft] = useState('')
+  const [gitRefKindDraft, setGitRefKindDraft] = useState<'baseline' | 'produced' | 'rerun_branch'>('produced')
   const [requiredCapabilitiesDraft, setRequiredCapabilitiesDraft] = useState('')
   const [agentIDDraft, setAgentIDDraft] = useState('agent-local')
   const [leaseSecondsDraft, setLeaseSecondsDraft] = useState('120')
@@ -1233,7 +1235,7 @@ export function App() {
 
   async function linkTaskGitRef(
     taskID: number,
-    payload: { repo: string; branch: string; base_commit: string; commit_sha: string }
+    payload: { repo: string; branch: string; base_commit: string; commit_sha: string; ref_kind: 'baseline' | 'produced' | 'rerun_branch' }
   ) {
     const res = await fetch(`${apiBase}/tasks/${taskID}/git-link`, {
       method: 'POST',
@@ -1739,7 +1741,8 @@ export function App() {
       repo: gitRepoDraft.trim(),
       branch: gitBranchDraft.trim(),
       base_commit: gitBaseCommitDraft.trim(),
-      commit_sha: gitCommitDraft.trim()
+      commit_sha: gitCommitDraft.trim(),
+      ref_kind: gitRefKindDraft
     }
     if (!payload.repo || !payload.branch || !payload.base_commit || !payload.commit_sha) {
       setTaskMessage('Repo, branch, base commit, and commit SHA are required.')
@@ -1754,6 +1757,7 @@ export function App() {
       setGitBranchDraft('')
       setGitBaseCommitDraft('')
       setGitCommitDraft('')
+      setGitRefKindDraft('produced')
       setTaskMessage('Git link added.')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'failed to add git link'
@@ -2479,6 +2483,18 @@ export function App() {
                           onChange={(e) => setGitCommitDraft(e.target.value)}
                           disabled={isSavingGitLink}
                         />
+                        <select
+                          className="col-span-2 h-10 rounded-md border border-border bg-background px-2 text-sm"
+                          value={gitRefKindDraft}
+                          onChange={(e) =>
+                            setGitRefKindDraft(e.target.value as 'baseline' | 'produced' | 'rerun_branch')
+                          }
+                          disabled={isSavingGitLink}
+                        >
+                          <option value="produced">Produced commit</option>
+                          <option value="baseline">Baseline commit</option>
+                          <option value="rerun_branch">Rerun branch marker</option>
+                        </select>
                       </div>
                       <div className="flex justify-end">
                         <Button type="submit" size="sm" variant="outline" disabled={isSavingGitLink}>
@@ -2705,9 +2721,14 @@ export function App() {
                             <div className="mt-1 max-h-32 space-y-1 overflow-y-auto rounded-md border bg-background/50 p-2">
                               {taskContext.git_refs.map((ref) => (
                                 <div key={ref.id} className="text-xs">
-                                  <p className="truncate text-foreground/90">
-                                    {ref.repo} · {ref.branch}
-                                  </p>
+                                  <div className="flex items-center gap-2">
+                                    <span className="rounded-full border border-border/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                                      {ref.ref_kind.replace('_', ' ')}
+                                    </span>
+                                    <p className="truncate text-foreground/90">
+                                      {ref.repo} · {ref.branch}
+                                    </p>
+                                  </div>
                                   <p className="truncate text-muted-foreground">
                                     {ref.base_commit.slice(0, 12)} → {ref.commit_sha.slice(0, 12)}
                                   </p>

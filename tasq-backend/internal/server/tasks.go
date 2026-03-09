@@ -480,6 +480,14 @@ func (s *server) linkTaskGitRef(w http.ResponseWriter, r *http.Request, taskID i
 		http.Error(w, "repo, branch, base_commit, commit_sha are required", http.StatusBadRequest)
 		return
 	}
+	req.RefKind = strings.ToLower(strings.TrimSpace(req.RefKind))
+	if req.RefKind == "" {
+		req.RefKind = "produced"
+	}
+	if req.RefKind != "baseline" && req.RefKind != "produced" && req.RefKind != "rerun_branch" {
+		http.Error(w, "ref_kind must be baseline, produced, or rerun_branch", http.StatusBadRequest)
+		return
+	}
 
 	var projectID int64
 	if err := s.db.QueryRowContext(r.Context(), `SELECT project_id FROM tasks WHERE id = $1`, taskID).Scan(&projectID); err != nil {
@@ -499,9 +507,9 @@ func (s *server) linkTaskGitRef(w http.ResponseWriter, r *http.Request, taskID i
 	defer tx.Rollback()
 
 	if _, err := tx.ExecContext(r.Context(), `
-		INSERT INTO task_git_refs(task_id, repo, branch, base_commit, commit_sha)
-		VALUES ($1, $2, $3, $4, $5)`,
-		taskID, req.Repo, req.Branch, req.BaseCommit, req.CommitSHA); err != nil {
+		INSERT INTO task_git_refs(task_id, repo, branch, base_commit, commit_sha, ref_kind)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		taskID, req.Repo, req.Branch, req.BaseCommit, req.CommitSHA, req.RefKind); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -512,6 +520,7 @@ func (s *server) linkTaskGitRef(w http.ResponseWriter, r *http.Request, taskID i
 		"branch":      req.Branch,
 		"base_commit": req.BaseCommit,
 		"commit_sha":  req.CommitSHA,
+		"ref_kind":    req.RefKind,
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

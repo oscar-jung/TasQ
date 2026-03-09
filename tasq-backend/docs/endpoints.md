@@ -197,7 +197,11 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
 
 - `POST /tasks/:task_id/git-link`
   - Handler: `(*server).linkTaskGitRef` in `internal/server/tasks.go`
-  - Purpose: link git metadata (`repo`, `branch`, `base_commit`, `commit_sha`) to task history.
+  - Purpose: link git metadata (`repo`, `branch`, `base_commit`, `commit_sha`, `ref_kind`) to task history.
+  - `ref_kind`:
+    - `baseline`
+    - `produced`
+    - `rerun_branch`
 
 ## Notes
 - Tree guard mode is controlled by env `TREE_GUARD_MODE`:

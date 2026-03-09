@@ -161,6 +161,7 @@ type linkTaskGitRefReq struct {
 	Branch     string `json:"branch"`
 	BaseCommit string `json:"base_commit"`
 	CommitSHA  string `json:"commit_sha"`
+	RefKind    string `json:"ref_kind"`
 }
 
 type contextDependency struct {
@@ -195,6 +196,7 @@ type taskGitRefSummary struct {
 	Branch     string    `json:"branch"`
 	BaseCommit string    `json:"base_commit"`
 	CommitSHA  string    `json:"commit_sha"`
+	RefKind    string    `json:"ref_kind"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 

@@ -229,6 +229,10 @@ For reruns, prefer a branch-first workflow:
 - create a fresh branch for the rerun path
 - continue implementation there
 - link the branch/base commit/produced commit back to the task
+- mark linked refs as:
+  - `baseline`
+  - `rerun_branch`
+  - `produced`
 ```
 
 ## Agent runtime demo
