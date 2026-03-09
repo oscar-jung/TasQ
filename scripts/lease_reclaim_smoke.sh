@@ -67,23 +67,7 @@ fi
 echo "[test] wait lease expiry"
 sleep 3
 
-echo "[test] agent-b claim after expiry should be empty (task remains in_progress)"
-claim_b_expired="$(
-  curl "${curl_args[@]}" -H "Content-Type: application/json" -X POST "${API_BASE}/agents/claim-next" \
-    -d "{\"project_id\":${project_id},\"agent_id\":\"agent-b\",\"lease_seconds\":30}"
-)"
-if [[ "$(echo "${claim_b_expired}" | jq -r '.task.id // empty')" != "" ]]; then
-  echo "[fail] expected empty claim after lease expiry while task is still in_progress"
-  echo "${claim_b_expired}" | jq .
-  exit 1
-fi
-
-echo "[test] manual recovery: reset status to planned"
-curl "${curl_args[@]}" -H "Content-Type: application/json" -X PATCH "${API_BASE}/tasks/${task_id}/status" \
-  -d '{"status":"planned"}' \
-  | jq .
-
-echo "[test] agent-b reclaim after manual recovery"
+echo "[test] agent-b claim after expiry should reclaim automatically"
 claim_b="$(
   curl "${curl_args[@]}" -H "Content-Type: application/json" -X POST "${API_BASE}/agents/claim-next" \
     -d "{\"project_id\":${project_id},\"agent_id\":\"agent-b\",\"lease_seconds\":30}"
@@ -92,7 +76,7 @@ task_b="$(echo "${claim_b}" | jq -r '.task.id // empty')"
 token_b="$(echo "${claim_b}" | jq -r '.claim.token // empty')"
 attempt_b="$(echo "${claim_b}" | jq -r '.claim.attempt_no // empty')"
 if [[ "${task_b}" != "${task_id}" || -z "${token_b}" ]]; then
-  echo "[fail] agent-b did not reclaim expected task after manual recovery"
+  echo "[fail] agent-b did not reclaim expected task after lease expiry"
   echo "${claim_b}" | jq .
   exit 1
 fi

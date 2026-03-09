@@ -31,6 +31,7 @@ Ordering:
    - release
 
 Claim and completion APIs validate `claim_token`.
+`claim-next` performs stale-claim reconciliation before task selection.
 
 ## Endpoints
 
@@ -76,6 +77,9 @@ Response (empty queue):
   "message": "no claimable task"
 }
 ```
+
+### 1a) Manual Reconcile (optional admin control)
+`POST /projects/:project_id/claims/reconcile`
 
 ### 2) Heartbeat
 `POST /tasks/:task_id/heartbeat`

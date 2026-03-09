@@ -45,6 +45,11 @@ func (s *server) claimNext(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
+	if _, err := s.reconcileStaleClaimsTx(r.Context(), tx, req.ProjectID, "system", "lease-reaper"); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	var t task
 	err = tx.QueryRowContext(r.Context(), `
 		SELECT t.id, t.project_id, t.parent_task_id, t.title, t.spec_md, t.result_md, t.status, t.max_attempts, t.display_order, t.created_at, t.started_at, t.done_at

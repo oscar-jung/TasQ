@@ -41,6 +41,10 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
   - Handler: `(*server).listProjectEvents` in `internal/server/events.go`
   - Purpose: list project-level audit timeline events (newest first).
 
+- `POST /projects/:project_id/claims/reconcile`
+  - Handler: `(*server).reconcileProjectClaims` in `internal/server/reconcile.go`
+  - Purpose: manually release expired active claims and restore stale in-progress tasks.
+
 ## Task Dependencies
 - `POST /tasks/:task_id/dependencies`
   - Handler: `(*server).addDependency` in `internal/server/tasks.go`
@@ -91,6 +95,7 @@ This is a concise map of HTTP endpoints to handler functions under `internal/ser
 - `POST /agents/claim-next`
   - Handler: `(*server).claimNext` in `internal/server/agents.go`
   - Purpose: atomically claim the next executable task.
+  - Includes auto stale-claim reconciliation for the target project before selection.
 
 - `POST /tasks/:task_id/heartbeat`
   - Handler: `(*server).heartbeatTaskClaim` in `internal/server/agents.go`

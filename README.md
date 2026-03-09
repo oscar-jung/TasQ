@@ -41,12 +41,15 @@ docker compose up --build
 - `PATCH /tasks/:id/status`
 - `PATCH /tasks/:id/execution-policy`
 - `POST /agents/claim-next`
+- `POST /projects/:id/claims/reconcile`
 - `POST /tasks/:id/heartbeat`
 - `POST /tasks/:id/release`
 - `POST /tasks/:id/complete`
 - `POST /tasks/:id/fail`
 - `POST /tasks/:id/git-link`
 - `GET /tasks/:id/context`
+- `GET /tasks/:id/events`
+- `GET /projects/:id/events`
 
 ## Smoke tests
 ```bash

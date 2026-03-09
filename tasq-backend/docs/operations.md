@@ -36,8 +36,8 @@ cat tasq_backup.sql | docker compose exec -T db psql -U tasq -d tasq
    - dependencies done
    - status planned
 2. Check lease state in `task_claims` (active + lease_until).
-3. Note: expired lease does not automatically reset task status from `in_progress` to `planned`.
-4. Recover by setting task status to `planned` (admin/manual flow), then re-claim.
+3. `claim-next` automatically reconciles expired claims for the target project.
+4. If needed, force reconcile with `POST /projects/:project_id/claims/reconcile`.
 5. Use event timeline APIs:
    - `/tasks/:id/events`
    - `/projects/:id/events`

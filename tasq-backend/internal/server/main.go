@@ -186,6 +186,13 @@ type taskEventSummary struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
+type staleClaimReconcileReport struct {
+	ProjectID          int64   `json:"project_id"`
+	ReleasedClaimIDs   []int64 `json:"released_claim_ids"`
+	ResetTaskIDs       []int64 `json:"reset_task_ids"`
+	ReleasedTaskRunIDs []int64 `json:"released_task_run_ids"`
+}
+
 // Run starts the HTTP server and wires shared middleware and routes.
 func Run() error {
 	dbURL := getenv("DATABASE_URL", "postgres://tasq:tasq@db:5432/tasq?sslmode=disable")
@@ -316,6 +323,13 @@ func (s *server) projectsSubrouter(w http.ResponseWriter, r *http.Request) {
 			s.validateProjectTree(w, r, projectID)
 			return
 		}
+	}
+	if len(parts) == 3 && parts[1] == "claims" && parts[2] == "reconcile" && r.Method == http.MethodPost {
+		if !s.requireProjectAccess(w, r, projectID, "task:admin", true) {
+			return
+		}
+		s.reconcileProjectClaims(w, r, projectID)
+		return
 	}
 	if len(parts) == 2 && parts[1] == "events" && r.Method == http.MethodGet {
 		if !s.requireProjectAccess(w, r, projectID, "project:read", false) {
