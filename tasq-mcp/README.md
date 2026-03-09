@@ -1,4 +1,4 @@
-# tasq-mcp (Phase 3)
+# tasq-mcp (Phase 4)
 
 MCP stdio server for TasQ runtime integration.
 
@@ -16,13 +16,17 @@ MCP stdio server for TasQ runtime integration.
   - `tasq_complete_task`
   - `tasq_fail_task`
   - `tasq_link_git_ref`
+  - `tasq_create_project`
+  - `tasq_create_task`
+  - `tasq_add_dependency`
+  - `tasq_set_task_capabilities`
 
-Phase 3 adds write-path runtime APIs for heartbeat and task finalization.
+Phase 4 adds optional planner/admin tools.
 
 ## Environment
 - `TASQ_API_BASE` (default: `http://localhost:8080`)
 - `TASQ_TOKEN_AGENT` (used by claim/context tools)
-- `TASQ_TOKEN_ADMIN` (fallback for admin-level reads such as runtime alerts)
+- `TASQ_TOKEN_ADMIN` (required for admin tools, fallback for runtime alerts)
 
 ## Run
 ```bash

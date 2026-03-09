@@ -101,6 +101,30 @@ type linkGitRefArgs struct {
 	CommitSHA  string `json:"commit_sha,omitempty"`
 }
 
+type createProjectArgs struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+type createTaskArgs struct {
+	ProjectID            int64    `json:"project_id"`
+	ParentTaskID         *int64   `json:"parent_task_id,omitempty"`
+	Title                string   `json:"title"`
+	SpecMD               string   `json:"spec_md,omitempty"`
+	MaxAttempts          *int64   `json:"max_attempts,omitempty"`
+	RequiredCapabilities []string `json:"required_capabilities,omitempty"`
+}
+
+type addDependencyArgs struct {
+	TaskID            int64 `json:"task_id"`
+	PredecessorTaskID int64 `json:"predecessor_task_id"`
+}
+
+type setTaskCapabilitiesArgs struct {
+	TaskID               int64    `json:"task_id"`
+	RequiredCapabilities []string `json:"required_capabilities"`
+}
+
 type httpCallError struct {
 	Status int
 	Body   string
@@ -344,6 +368,64 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 							"required": []string{"task_id"},
 						},
 					},
+					{
+						"name":        "tasq_create_project",
+						"description": "Create a project (admin token required).",
+						"inputSchema": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"name":        map[string]any{"type": "string"},
+								"description": map[string]any{"type": "string"},
+							},
+							"required": []string{"name"},
+						},
+					},
+					{
+						"name":        "tasq_create_task",
+						"description": "Create a task (admin token required).",
+						"inputSchema": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"project_id":     map[string]any{"type": "integer"},
+								"parent_task_id": map[string]any{"type": "integer"},
+								"title":          map[string]any{"type": "string"},
+								"spec_md":        map[string]any{"type": "string"},
+								"max_attempts":   map[string]any{"type": "integer"},
+								"required_capabilities": map[string]any{
+									"type":  "array",
+									"items": map[string]any{"type": "string"},
+								},
+							},
+							"required": []string{"project_id", "title"},
+						},
+					},
+					{
+						"name":        "tasq_add_dependency",
+						"description": "Add dependency edge (admin token required).",
+						"inputSchema": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"task_id":             map[string]any{"type": "integer"},
+								"predecessor_task_id": map[string]any{"type": "integer"},
+							},
+							"required": []string{"task_id", "predecessor_task_id"},
+						},
+					},
+					{
+						"name":        "tasq_set_task_capabilities",
+						"description": "Set task capability filter (admin token required).",
+						"inputSchema": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"task_id": map[string]any{"type": "integer"},
+								"required_capabilities": map[string]any{
+									"type":  "array",
+									"items": map[string]any{"type": "string"},
+								},
+							},
+							"required": []string{"task_id", "required_capabilities"},
+						},
+					},
 				},
 			},
 		}
@@ -513,6 +595,90 @@ func handleRequest(req rpcRequest, cfg config) rpcResponse {
 				"base_commit": strings.TrimSpace(args.BaseCommit),
 				"commit_sha":  strings.TrimSpace(args.CommitSHA),
 			}, cfg.AgentToken)
+			if err != nil {
+				return toolError(err)
+			}
+			return toolResult(resBody)
+		case "tasq_create_project":
+			var args createProjectArgs
+			if err := decodeArgs(payload.Arguments, &args); err != nil {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: err.Error()}}
+			}
+			if strings.TrimSpace(args.Name) == "" {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: "name is required"}}
+			}
+			adminToken, err := requireAdminToken(cfg)
+			if err != nil {
+				return toolError(err)
+			}
+			resBody, err := tasqJSON(cfg, http.MethodPost, "/projects", map[string]any{
+				"name":        strings.TrimSpace(args.Name),
+				"description": strings.TrimSpace(args.Description),
+			}, adminToken)
+			if err != nil {
+				return toolError(err)
+			}
+			return toolResult(resBody)
+		case "tasq_create_task":
+			var args createTaskArgs
+			if err := decodeArgs(payload.Arguments, &args); err != nil {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: err.Error()}}
+			}
+			if args.ProjectID == 0 || strings.TrimSpace(args.Title) == "" {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: "project_id and title are required"}}
+			}
+			adminToken, err := requireAdminToken(cfg)
+			if err != nil {
+				return toolError(err)
+			}
+			body := map[string]any{
+				"parent_task_id":        args.ParentTaskID,
+				"title":                 strings.TrimSpace(args.Title),
+				"spec_md":               strings.TrimSpace(args.SpecMD),
+				"required_capabilities": args.RequiredCapabilities,
+			}
+			if args.MaxAttempts != nil {
+				body["max_attempts"] = *args.MaxAttempts
+			}
+			resBody, err := tasqJSON(cfg, http.MethodPost, fmt.Sprintf("/projects/%d/tasks", args.ProjectID), body, adminToken)
+			if err != nil {
+				return toolError(err)
+			}
+			return toolResult(resBody)
+		case "tasq_add_dependency":
+			var args addDependencyArgs
+			if err := decodeArgs(payload.Arguments, &args); err != nil {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: err.Error()}}
+			}
+			if args.TaskID == 0 || args.PredecessorTaskID == 0 {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: "task_id and predecessor_task_id are required"}}
+			}
+			adminToken, err := requireAdminToken(cfg)
+			if err != nil {
+				return toolError(err)
+			}
+			resBody, err := tasqJSON(cfg, http.MethodPost, fmt.Sprintf("/tasks/%d/dependencies", args.TaskID), map[string]any{
+				"predecessor_task_id": args.PredecessorTaskID,
+			}, adminToken)
+			if err != nil {
+				return toolError(err)
+			}
+			return toolResult(resBody)
+		case "tasq_set_task_capabilities":
+			var args setTaskCapabilitiesArgs
+			if err := decodeArgs(payload.Arguments, &args); err != nil {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: err.Error()}}
+			}
+			if args.TaskID == 0 {
+				return rpcResponse{Error: &rpcError{Code: -32602, Message: "task_id is required"}}
+			}
+			adminToken, err := requireAdminToken(cfg)
+			if err != nil {
+				return toolError(err)
+			}
+			resBody, err := tasqJSON(cfg, http.MethodPatch, fmt.Sprintf("/tasks/%d/capabilities", args.TaskID), map[string]any{
+				"required_capabilities": args.RequiredCapabilities,
+			}, adminToken)
 			if err != nil {
 				return toolError(err)
 			}
@@ -689,6 +855,14 @@ func validateResultPayloadV2(payload resultPayloadV2) error {
 		}
 	}
 	return nil
+}
+
+func requireAdminToken(cfg config) (string, error) {
+	token := strings.TrimSpace(cfg.AdminToken)
+	if token == "" {
+		return "", fmt.Errorf("TASQ_TOKEN_ADMIN is required for this tool")
+	}
+	return token, nil
 }
 
 func getenv(key, fallback string) string {
